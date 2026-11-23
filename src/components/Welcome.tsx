@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { t } from "../i18n";
 import { useApp } from "../store";
@@ -17,10 +17,21 @@ export function Welcome() {
   const theme = useApp((s) => s.theme);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  const openDir = async () => {
+  const openDir = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") await openRoot(selected);
-  };
+  }, [openRoot]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "o") return;
+      if (gitError) return;
+      e.preventDefault();
+      void openDir();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [gitError, openDir]);
 
   const initRepo = async () => {
     const selected = await open({ directory: true, multiple: false });

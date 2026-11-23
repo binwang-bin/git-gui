@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { api } from "../api";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
+import { openRepoInNewWindow } from "../windowing";
 import { CommitToolWindow } from "./CommitToolWindow";
 import { DiffView } from "./DiffView";
 import { LogPanel } from "./LogView";
@@ -31,7 +32,6 @@ export function Workbench() {
   const refresh = useApp((s) => s.refresh);
   const closeRoot = useApp((s) => s.closeRoot);
   const run = useApp((s) => s.run);
-  const openRoot = useApp((s) => s.openRoot);
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
   const setLocale = useApp((s) => s.setLocale);
@@ -74,14 +74,22 @@ export function Workbench() {
     window.addEventListener("mouseup", onUp);
   };
 
+  const openAnother = useCallback(async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected !== "string") return;
+    try {
+      const discovered = await api.discover(selected);
+      await openRepoInNewWindow(discovered);
+    } catch (e) {
+      useApp.setState({ error: String(e) });
+    }
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        void (async () => {
-          const selected = await open({ directory: true, multiple: false });
-          if (typeof selected === "string") await openRoot(selected);
-        })();
+        void openAnother();
       }
       if (e.ctrlKey && e.key.toLowerCase() === "r") {
         e.preventDefault();
@@ -109,7 +117,7 @@ export function Workbench() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openRoot, refresh, root, setLeftTool]);
+  }, [openAnother, refresh, root, setLeftTool]);
 
   return (
     <div className="app" style={{ position: "relative" }}>
@@ -133,6 +141,14 @@ export function Workbench() {
         </button>
         <div className="title-spacer" />
         <div className="title-actions">
+          <button
+            className="ghost"
+            disabled={busy}
+            title={`${t(locale, "openAnother")} (Ctrl+O)`}
+            onClick={() => void openAnother()}
+          >
+            {t(locale, "openAnother")}
+          </button>
           <button className="icon-btn" title={t(locale, "refresh")} onClick={() => void refresh()}>
             ↻
           </button>

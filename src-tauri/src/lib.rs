@@ -7,6 +7,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                crate::watch::stop_watch_for(window.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::git_detect,
             commands::repo_discover,

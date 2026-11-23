@@ -1,7 +1,7 @@
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
@@ -9,8 +9,8 @@ struct WatchState {
     _watcher: RecommendedWatcher,
 }
 
-static WATCHING: AtomicBool = AtomicBool::new(false);
-static STATE: Mutex<Option<WatchState>> = Mutex::new(None);
+static STATE: LazyLock<Mutex<HashMap<String, WatchState>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn should_ignore(path: &Path) -> bool {
     let s = path.to_string_lossy().replace('\\', "/");
@@ -33,8 +33,10 @@ fn interesting(kind: &EventKind) -> bool {
     )
 }
 
-pub fn start_watch(app: AppHandle, root: String) -> Result<(), String> {
-    stop_watch();
+/// Start watching `root` for the webview identified by `label`.
+/// Replaces any previous watch for the same label without touching other windows.
+pub fn start_watch(app: AppHandle, label: String, root: String) -> Result<(), String> {
+    stop_watch_for(&label);
 
     let root_path = PathBuf::from(&root);
     if !root_path.is_dir() {
@@ -43,6 +45,8 @@ pub fn start_watch(app: AppHandle, root: String) -> Result<(), String> {
 
     let last = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
     let app2 = app.clone();
+    let label2 = label.clone();
+    let root_payload = root;
 
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
@@ -59,7 +63,7 @@ pub fn start_watch(app: AppHandle, root: String) -> Result<(), String> {
                 return;
             }
             *slot = now;
-            let _ = app2.emit("repo-changed", ());
+            let _ = app2.emit_to(&label2, "repo-changed", root_payload.clone());
         },
         Config::default().with_poll_interval(Duration::from_secs(2)),
     )
@@ -69,17 +73,13 @@ pub fn start_watch(app: AppHandle, root: String) -> Result<(), String> {
         .watch(&root_path, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
 
-    // Also watch .git for HEAD/index/refs without objects noise (recursive already covers;
-    // ignore filter drops objects).
     let mut guard = STATE.lock().map_err(|e| e.to_string())?;
-    *guard = Some(WatchState { _watcher: watcher });
-    WATCHING.store(true, Ordering::SeqCst);
+    guard.insert(label, WatchState { _watcher: watcher });
     Ok(())
 }
 
-pub fn stop_watch() {
-    WATCHING.store(false, Ordering::SeqCst);
+pub fn stop_watch_for(label: &str) {
     if let Ok(mut g) = STATE.lock() {
-        *g = None;
+        g.remove(label);
     }
 }

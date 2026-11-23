@@ -489,12 +489,16 @@ pub async fn repo_stash_diff(root: String, index: u32) -> Result<git_core::FileD
 }
 
 #[tauri::command]
-pub fn watch_repo(app: tauri::AppHandle, root: String) -> Result<(), String> {
-    crate::watch::start_watch(app, root)
+pub fn watch_repo(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    root: String,
+) -> Result<(), String> {
+    crate::watch::start_watch(app, window.label().to_string(), root)
 }
 
 #[tauri::command]
-pub fn unwatch_repo() -> Result<(), String> {
-    crate::watch::stop_watch();
+pub fn unwatch_repo(window: tauri::WebviewWindow) -> Result<(), String> {
+    crate::watch::stop_watch_for(window.label());
     Ok(())
 }

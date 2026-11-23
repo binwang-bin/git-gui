@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { setWindowTitleForRepo } from "./windowing";
 import { create } from "zustand";
 import { api } from "./api";
 import type {
@@ -217,12 +218,14 @@ export const useApp = create<AppState>((set, get) => ({
       message: "",
       error: null,
     });
+    void setWindowTitleForRepo(root);
     await get().refresh();
     void api.watchRepo(root).catch(() => undefined);
   },
 
   closeRoot: () => {
     void api.unwatchRepo().catch(() => undefined);
+    void setWindowTitleForRepo(null);
     set({
       root: null,
       status: [],
