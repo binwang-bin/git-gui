@@ -2,11 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
-import type { Branch } from "../types";
+import type { Branch, ResetMode } from "../types";
 import { buildCommitGraph } from "../gitGraph";
 import { BranchesView } from "./BranchesView";
+import { CommitDetailPanel } from "./CommitDetailPanel";
 import { CommitGraphCell } from "./CommitGraphCell";
 import { useContextMenu, type MenuItem } from "./ContextMenu";
+import {
+  ConfirmDialog,
+  NewBranchDialog,
+  PromptDialog,
+  ResetDialog,
+} from "./GitDialogs";
 import { RemotesDialog, RemotesView } from "./RemotesView";
 
 function fuzzy(label: string, query: string): boolean {
@@ -239,6 +246,9 @@ function BranchTreePanel() {
   const [hidden, setHidden] = useState(false);
   const [selected, setSelected] = useState<PaneSelection>({ kind: "head" });
   const [remotesOpen, setRemotesOpen] = useState(false);
+  const [dlgNew, setDlgNew] = useState<{ start: string } | null>(null);
+  const [dlgRename, setDlgRename] = useState<string | null>(null);
+  const [dlgDelete, setDlgDelete] = useState<string | null>(null);
 
   // Keep selection object fresh after refresh (same name → latest Branch).
   useEffect(() => {
@@ -293,14 +303,8 @@ function BranchTreePanel() {
   };
 
   const doNewBranch = () => {
-    const from =
-      selected.kind === "head"
-        ? null
-        : selected.branch.name;
-    const label = from ?? "HEAD";
-    const n = prompt(tf(locale, "newBranchFrom", { name: label }));
-    if (!n?.trim()) return;
-    void run(() => api.createBranch(root, n.trim(), from, true));
+    const from = selected.kind === "head" ? null : selected.branch.name;
+    setDlgNew({ start: from ?? "HEAD" });
   };
 
   const doUpdateSelected = () => {
@@ -310,11 +314,7 @@ function BranchTreePanel() {
 
   const doDeleteSelected = () => {
     if (!selectedBranch || selectedBranch.isHead) return;
-    if (!confirm(tf(locale, "deleteBranchConfirm", { name: selectedBranch.name }))) return;
-    void run(async () => {
-      await api.deleteBranch(root, selectedBranch.name, false);
-      setSelected({ kind: "head" });
-    });
+    setDlgDelete(selectedBranch.name);
   };
 
   const doToggleFavorite = () => {
@@ -455,12 +455,20 @@ function BranchTreePanel() {
       void refresh();
       return;
     }
+    if (id === "new") {
+      setDlgNew({ start: name });
+      return;
+    }
+    if (id === "rename") {
+      setDlgRename(name);
+      return;
+    }
+    if (id === "delete") {
+      setDlgDelete(name);
+      return;
+    }
     void run(async () => {
-      if (id === "new") {
-        const n = prompt(tf(locale, "newBranchFrom", { name }));
-        if (!n?.trim()) return;
-        await api.createBranch(root, n.trim(), name === "HEAD" ? null : name, true);
-      } else if (id === "checkout") {
+      if (id === "checkout") {
         if (isRemote) {
           const localName = name.includes("/") ? name.split("/").slice(1).join("/") : name;
           await api.createBranch(root, localName, name, true);
@@ -497,10 +505,6 @@ function BranchTreePanel() {
         } else {
           await api.pushBranch(root, name);
         }
-      } else if (id === "rename") {
-        const n = prompt(tf(locale, "renameBranch", { name }), name);
-        if (!n?.trim() || n.trim() === name) return;
-        await api.renameBranch(root, name, n.trim());
       } else if (id === "diff-worktree") {
         const patch = await api.diffWorkingTree(root, name === "HEAD" ? "HEAD" : name);
         if (!patch.trim()) {
@@ -508,11 +512,7 @@ function BranchTreePanel() {
           return;
         }
         await navigator.clipboard.writeText(patch);
-        prompt(t(locale, "worktreeDiffCopied"), patch.slice(0, 200));
-      } else if (id === "delete") {
-        if (!confirm(tf(locale, "deleteBranchConfirm", { name }))) return;
-        await api.deleteBranch(root, name, false);
-        setSelected({ kind: "head" });
+        alert(t(locale, "worktreeDiffCopied"));
       }
     });
   };
@@ -716,6 +716,48 @@ function BranchTreePanel() {
         {(expanded.remote || query) && remote.map((b) => row(b, true))}
         {menuNode}
         <RemotesDialog open={remotesOpen} onClose={() => setRemotesOpen(false)} />
+        <NewBranchDialog
+          open={!!dlgNew}
+          startPoint={dlgNew?.start ?? "HEAD"}
+          onClose={() => setDlgNew(null)}
+          onConfirm={(n) => {
+            const start = dlgNew?.start;
+            setDlgNew(null);
+            if (!start) return;
+            void run(() =>
+              api.createBranch(root, n, start === "HEAD" ? null : start, true),
+            );
+          }}
+        />
+        <PromptDialog
+          open={!!dlgRename}
+          title={t(locale, "renameBranchTitle")}
+          label={t(locale, "renameTo")}
+          initial={dlgRename ?? ""}
+          onClose={() => setDlgRename(null)}
+          onConfirm={(n) => {
+            const old = dlgRename;
+            setDlgRename(null);
+            if (!old || n === old) return;
+            void run(() => api.renameBranch(root, old, n));
+          }}
+        />
+        <ConfirmDialog
+          open={!!dlgDelete}
+          title={t(locale, "deleteBranchTitle")}
+          message={dlgDelete ? tf(locale, "deleteBranchConfirm", { name: dlgDelete }) : ""}
+          danger
+          onClose={() => setDlgDelete(null)}
+          onConfirm={() => {
+            const name = dlgDelete;
+            setDlgDelete(null);
+            if (!name) return;
+            void run(async () => {
+              await api.deleteBranch(root, name, false);
+              setSelected({ kind: "head" });
+            });
+          }}
+        />
       </div>
     </div>
   );
@@ -741,6 +783,8 @@ export function LogPanel() {
   const run = useApp((s) => s.run);
   const { openMenu, menuNode } = useContextMenu();
   const [users, setUsers] = useState<string[]>([]);
+  const [newFromCommit, setNewFromCommit] = useState<string | null>(null);
+  const [resetDlg, setResetDlg] = useState<{ id: string; mode: ResetMode } | null>(null);
 
   useEffect(() => {
     void api
@@ -851,24 +895,27 @@ export function LogPanel() {
   ];
 
   const onCommitAction = (commitId: string, id: string) => {
+    if (id === "branch") {
+      setNewFromCommit(commitId);
+      return;
+    }
+    if (id === "reset-soft") {
+      setResetDlg({ id: commitId, mode: "soft" });
+      return;
+    }
+    if (id === "reset-mixed") {
+      setResetDlg({ id: commitId, mode: "mixed" });
+      return;
+    }
+    if (id === "reset-hard") {
+      setResetDlg({ id: commitId, mode: "hard" });
+      return;
+    }
     void run(async () => {
       if (id === "checkout") await api.checkout(root, commitId, false);
-      else if (id === "branch") {
-        const n = prompt(t(locale, "newBranchName"));
-        if (!n) return;
-        await api.createBranch(root, n, commitId, true);
-      } else if (id === "cherry") await api.cherryPick(root, [commitId]);
+      else if (id === "cherry") await api.cherryPick(root, [commitId]);
       else if (id === "revert") await api.revert(root, [commitId]);
-      else if (id === "reset-soft") {
-        if (!confirm(t(locale, "confirmResetSoft"))) return;
-        await api.reset(root, commitId, "soft");
-      } else if (id === "reset-mixed") {
-        if (!confirm(t(locale, "confirmResetMixed"))) return;
-        await api.reset(root, commitId, "mixed");
-      } else if (id === "reset-hard") {
-        if (!confirm(t(locale, "confirmResetHard"))) return;
-        await api.reset(root, commitId, "hard");
-      } else if (id === "copy") {
+      else if (id === "copy") {
         await navigator.clipboard.writeText(commitId);
       }
     });
@@ -991,39 +1038,65 @@ export function LogPanel() {
                 ↻
               </button>
             </div>
-            <div className="commit-table">
-              {commits.map((c) => {
-                const g = graphById.get(c.id);
-                return (
-                  <div
-                    key={c.id}
-                    className={`commit-row ${selected?.id === c.id ? "selected" : ""}`}
-                    onClick={() => void selectCommit(c)}
-                    onContextMenu={(e) =>
-                      openMenu(e, commitMenu(c.id), (id) => onCommitAction(c.id, id))
-                    }
-                  >
-                    <span className="graph-cell">
-                      {g ? <CommitGraphCell row={g} /> : null}
-                    </span>
-                    <span className="hash">{c.shortId}</span>
-                    <span className="summary" title={c.summary}>
-                      {c.summary}
-                      {c.refs.length ? (
-                        <span className="refs"> {c.refs.slice(0, 3).join(" ")}</span>
-                      ) : null}
-                    </span>
-                    <span className="meta">{c.author}</span>
-                    <span className="meta">{new Date(c.time * 1000).toLocaleString()}</span>
-                  </div>
-                );
-              })}
-              {!commits.length && <div className="empty-hint">No commits</div>}
+            <div className={`log-split ${selected ? "with-detail" : ""}`}>
+              <div className="commit-table">
+                {commits.map((c) => {
+                  const g = graphById.get(c.id);
+                  return (
+                    <div
+                      key={c.id}
+                      className={`commit-row ${selected?.id === c.id ? "selected" : ""}`}
+                      onClick={() => void selectCommit(c)}
+                      onContextMenu={(e) =>
+                        openMenu(e, commitMenu(c.id), (id) => onCommitAction(c.id, id))
+                      }
+                    >
+                      <span className="graph-cell">
+                        {g ? <CommitGraphCell row={g} /> : null}
+                      </span>
+                      <span className="hash">{c.shortId}</span>
+                      <span className="summary" title={c.summary}>
+                        {c.summary}
+                        {c.refs.length ? (
+                          <span className="refs"> {c.refs.slice(0, 3).join(" ")}</span>
+                        ) : null}
+                      </span>
+                      <span className="meta">{c.author}</span>
+                      <span className="meta">{new Date(c.time * 1000).toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+                {!commits.length && <div className="empty-hint">No commits</div>}
+              </div>
+              <CommitDetailPanel />
             </div>
           </div>
         </div>
       )}
       {menuNode}
+      <NewBranchDialog
+        open={!!newFromCommit}
+        startPoint={newFromCommit ?? ""}
+        onClose={() => setNewFromCommit(null)}
+        onConfirm={(n) => {
+          const commitId = newFromCommit;
+          setNewFromCommit(null);
+          if (!commitId) return;
+          void run(() => api.createBranch(root, n, commitId, true));
+        }}
+      />
+      <ResetDialog
+        open={!!resetDlg}
+        commitId={resetDlg?.id ?? ""}
+        mode={resetDlg?.mode ?? "mixed"}
+        onClose={() => setResetDlg(null)}
+        onConfirm={() => {
+          const r = resetDlg;
+          setResetDlg(null);
+          if (!r) return;
+          void run(() => api.reset(root, r.id, r.mode));
+        }}
+      />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { useState } from "react";
 import { api } from "../api";
 import { t } from "../i18n";
 import { useApp } from "../store";
+import { CloneDialog } from "./GitDialogs";
 
 export function Welcome() {
   const locale = useApp((s) => s.locale);
@@ -13,23 +15,11 @@ export function Welcome() {
   const setLocale = useApp((s) => s.setLocale);
   const setTheme = useApp((s) => s.setTheme);
   const theme = useApp((s) => s.theme);
+  const [cloneOpen, setCloneOpen] = useState(false);
 
   const openDir = async () => {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") await openRoot(selected);
-  };
-
-  const cloneRepo = async () => {
-    const url = prompt("Repository URL");
-    if (!url) return;
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected !== "string") return;
-    const name = url.split("/").pop()?.replace(/\.git$/, "") || "repo";
-    const target = `${selected}\\${name}`.replace(/\\/g, "/");
-    await run(async () => {
-      const root = await api.clone(url, target);
-      await openRoot(root);
-    });
   };
 
   const initRepo = async () => {
@@ -59,7 +49,7 @@ export function Welcome() {
           <button className="primary" onClick={() => void openDir()} disabled={!!gitError}>
             {t(locale, "open")}
           </button>
-          <button className="secondary" onClick={() => void cloneRepo()} disabled={!!gitError}>
+          <button className="secondary" onClick={() => setCloneOpen(true)} disabled={!!gitError}>
             {t(locale, "clone")}
           </button>
           <button className="secondary" onClick={() => void initRepo()} disabled={!!gitError}>
@@ -94,6 +84,19 @@ export function Welcome() {
           </label>
         </div>
       </div>
+      <CloneDialog
+        open={cloneOpen}
+        onClose={() => setCloneOpen(false)}
+        onConfirm={(url, path) => {
+          setCloneOpen(false);
+          const name = url.split("/").pop()?.replace(/\.git$/, "") || "repo";
+          const target = `${path.replace(/\\/g, "/").replace(/\/$/, "")}/${name}`;
+          void run(async () => {
+            const root = await api.clone(url, target);
+            await openRoot(root);
+          });
+        }}
+      />
     </div>
   );
 }

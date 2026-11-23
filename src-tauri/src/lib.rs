@@ -1,4 +1,5 @@
 mod commands;
+mod watch;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -54,12 +55,16 @@ pub fn run() {
             commands::repo_continue,
             commands::repo_abort,
             commands::repo_stage_hunk,
+            commands::repo_apply_patch,
+            commands::repo_conflict_resolve,
             commands::repo_blame,
             commands::repo_outgoing,
             commands::open_path,
             commands::repo_log_users,
             commands::repo_list_dir,
             commands::repo_stash_diff,
+            commands::watch_repo,
+            commands::unwatch_repo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

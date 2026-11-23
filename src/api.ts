@@ -92,6 +92,10 @@ export const api = {
   abortOp: (root: string) => invoke<string>("repo_abort", { root }),
   stageHunk: (root: string, path: string, patch: string) =>
     invoke<void>("repo_stage_hunk", { root, path, patch }),
+  applyPatch: (root: string, patch: string, cached: boolean, reverse: boolean) =>
+    invoke<void>("repo_apply_patch", { root, patch, cached, reverse }),
+  conflictResolve: (root: string, paths: string[], side: "ours" | "theirs") =>
+    invoke<void>("repo_conflict_resolve", { root, paths, side }),
   blame: (root: string, path: string) => invoke<BlameLine[]>("repo_blame", { root, path }),
   outgoing: (root: string) => invoke<Commit[]>("repo_outgoing", { root }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
@@ -100,4 +104,6 @@ export const api = {
     invoke<import("./types").DirEntry[]>("repo_list_dir", { root, path }),
   stashDiff: (root: string, index: number) =>
     invoke<import("./types").FileDiff>("repo_stash_diff", { root, index }),
+  watchRepo: (root: string) => invoke<void>("watch_repo", { root }),
+  unwatchRepo: () => invoke<void>("unwatch_repo"),
 };

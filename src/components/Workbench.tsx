@@ -7,6 +7,7 @@ import { CommitToolWindow } from "./CommitToolWindow";
 import { DiffView } from "./DiffView";
 import { LogPanel } from "./LogView";
 import { ProjectTree } from "./ProjectTree";
+import { SyncDialogs } from "./SyncDialogs";
 
 const LOG_HEIGHT_KEY = "git-gui.logHeight";
 const LOG_HEIGHT_MIN = 140;
@@ -34,6 +35,8 @@ export function Workbench() {
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
   const setLocale = useApp((s) => s.setLocale);
+  const syncDialog = useApp((s) => s.syncDialog);
+  const setSyncDialog = useApp((s) => s.setSyncDialog);
   const name = root.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? root;
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [logHeight, setLogHeight] = useState(loadLogHeight);
@@ -128,6 +131,33 @@ export function Workbench() {
             </span>
           )}
         </button>
+        <div className="sync-actions">
+          <button
+            className="ghost"
+            disabled={busy}
+            title={t(locale, "fetch")}
+            onClick={() => setSyncDialog("fetch")}
+          >
+            {t(locale, "fetch")}
+          </button>
+          <button
+            className="ghost"
+            disabled={busy}
+            title={t(locale, "pull")}
+            onClick={() => setSyncDialog("pull")}
+          >
+            {t(locale, "pull")}
+          </button>
+          <button
+            className="ghost"
+            disabled={busy}
+            title={t(locale, "push")}
+            onClick={() => setSyncDialog("push")}
+          >
+            {t(locale, "push")}
+            {branch && branch.ahead > 0 ? ` (${branch.ahead})` : ""}
+          </button>
+        </div>
         <div className="title-spacer" />
         <div className="title-actions">
           <button className="icon-btn" title={t(locale, "refresh")} onClick={() => void refresh()}>
@@ -225,6 +255,7 @@ export function Workbench() {
       </div>
 
       {busy && <div className="busy-toast">{t(locale, "loading")}</div>}
+      <SyncDialogs kind={syncDialog} onClose={() => setSyncDialog(null)} />
     </div>
   );
 }

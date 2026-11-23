@@ -724,6 +724,147 @@ body.resizing-row * {
   color: var(--fg-editor);
 }
 
+.conflict-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-elev));
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-small);
+  color: var(--fg);
+}
+
+.side-diff {
+  display: flex;
+  flex-direction: column;
+}
+
+.side-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.side-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 4px;
+  border-right: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.side-cell.right {
+  border-right: none;
+}
+
+.side-cell.del {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.side-cell.add {
+  background: color-mix(in srgb, #3d8b40 22%, transparent);
+}
+
+.side-cell.empty {
+  background: color-mix(in srgb, var(--fg-subtle) 6%, transparent);
+}
+
+.side-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.line-ops {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  flex: none;
+}
+
+.diff-line:hover .line-ops,
+.side-row:hover .line-ops {
+  opacity: 1;
+}
+
+.diff-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.diff-line .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.ghost.pressed {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.commit-detail {
+  border-left: 1px solid var(--border);
+  min-width: 220px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+
+.commit-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-small);
+}
+
+.commit-detail-meta {
+  padding: 8px 10px;
+  font-size: var(--fs-small);
+  color: var(--fg-secondary);
+  border-bottom: 1px solid var(--border);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.commit-detail-files {
+  flex: 1;
+  overflow: auto;
+}
+
+.commit-file-row {
+  display: flex;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.commit-file-row:hover,
+.commit-file-row.selected {
+  background: var(--bg-hover);
+}
+
+.log-split {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.log-split .commit-table {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
 .empty-hint {
   color: var(--fg-subtle);
   padding: 24px;
@@ -1535,9 +1676,10 @@ body.resizing-row * {
   overflow: hidden;
 }
 
-.remotes-dialog {
-  width: min(560px, 92vw);
-  max-height: min(480px, 86vh);
+.remotes-dialog,
+.modal-dialog {
+  width: min(480px, 92vw);
+  max-height: min(560px, 86vh);
   background: var(--bg-app);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -1545,6 +1687,132 @@ body.resizing-row * {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.modal-dialog.wide {
+  width: min(640px, 94vw);
+}
+
+.modal-body {
+  padding: 14px 16px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal-footer {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+
+.modal-text {
+  margin: 0;
+  color: var(--fg-secondary);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.modal-radio,
+.modal-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-small);
+}
+
+.modal-field input,
+.modal-field select,
+.modal-field textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-app);
+  color: var(--fg);
+  font: inherit;
+}
+
+.modal-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.modal-field-row .modal-field {
+  flex: 1;
+}
+
+.modal-warn {
+  color: var(--danger);
+  font-size: var(--fs-small);
+  margin: 0;
+}
+
+.outgoing-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 120px;
+  max-height: 240px;
+}
+
+.outgoing-list {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.outgoing-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 100px;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: var(--fs-small);
+  border-bottom: 1px solid var(--border);
+}
+
+.outgoing-row:last-child {
+  border-bottom: none;
+}
+
+.outgoing-row .hash {
+  font-family: var(--font-mono);
+  color: var(--fg-subtle);
+}
+
+.outgoing-row .summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outgoing-row .meta {
+  color: var(--fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar .sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
 }
 
 .remotes-table {

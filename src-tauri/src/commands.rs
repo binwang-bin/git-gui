@@ -418,6 +418,37 @@ pub async fn repo_stage_hunk(root: String, path: String, patch: String) -> Resul
 }
 
 #[tauri::command]
+pub async fn repo_apply_patch(
+    root: String,
+    patch: String,
+    cached: bool,
+    reverse: bool,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        repo(&root)?
+            .apply_patch(&patch, cached, reverse)
+            .map_err(map_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_conflict_resolve(
+    root: String,
+    paths: Vec<String>,
+    side: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        repo(&root)?
+            .conflict_resolve(&paths, &side)
+            .map_err(map_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn repo_blame(root: String, path: String) -> Result<Vec<git_core::BlameLine>, String> {
     tokio::task::spawn_blocking(move || repo(&root)?.blame(&path).map_err(map_err))
         .await
@@ -455,4 +486,15 @@ pub async fn repo_stash_diff(root: String, index: u32) -> Result<git_core::FileD
     tokio::task::spawn_blocking(move || repo(&root)?.stash_diff(index).map_err(map_err))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn watch_repo(app: tauri::AppHandle, root: String) -> Result<(), String> {
+    crate::watch::start_watch(app, root)
+}
+
+#[tauri::command]
+pub fn unwatch_repo() -> Result<(), String> {
+    crate::watch::stop_watch();
+    Ok(())
 }

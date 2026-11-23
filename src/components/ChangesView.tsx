@@ -86,7 +86,7 @@ function FileRow(props: {
       <span className={`status ${props.kind ?? ""}`}>{statusLetter(props.kind)}</span>
       <span className="name" title={props.file.relPath}>
         <span className="basename">{base}</span>
-        {dir && <span className="dirname">{dir}</span>}
+        {dir ? <span className="dirname">{dir}</span> : null}
       </span>
     </div>
   );
@@ -246,6 +246,14 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
       ];
     }
 
+    const conflictItems: MenuItem[] = isConflict
+      ? [
+          { id: "accept-ours", label: t(locale, "acceptOurs") },
+          { id: "accept-theirs", label: t(locale, "acceptTheirs") },
+          { id: "sep-conflict", label: "", separator: true },
+        ]
+      : [];
+
     return [
       {
         id: "commit-file",
@@ -260,6 +268,7 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         disabled: isDeleted,
       },
       { id: "sep1", label: "", separator: true },
+      ...conflictItems,
       {
         id: "rollback",
         label: t(locale, "rollback"),
@@ -364,7 +373,14 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         await api.deletePaths(root, paths);
         return;
       }
-      if (id === "stage" || id === "add-vcs") await api.stage(root, paths);
+      if (id === "accept-ours" || id === "accept-theirs") {
+        await api.conflictResolve(root, paths, id === "accept-ours" ? "ours" : "theirs");
+        return;
+      }
+      if (id === "stage" || id === "add-vcs") {
+        await api.stage(root, paths);
+        setCheckedAll(paths, true);
+      }
       else if (id === "unstage") await api.unstage(root, paths);
       else if (id === "stash-selected" || id === "shelve") {
         const msg =
@@ -430,6 +446,16 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         shortcut: "Ctrl+Alt+Z",
         disabled: !paths.length,
       },
+      ...(isUnversioned
+        ? [
+            {
+              id: "g-add-vcs",
+              label: t(locale, "addToVcs"),
+              shortcut: "Ctrl+Alt+A",
+              disabled: !paths.length,
+            },
+          ]
+        : []),
       {
         id: "g-stage",
         label: `+ ${t(locale, "stage")}`,
@@ -471,8 +497,9 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         const ok = confirm(tf(locale, "rollbackGroup", { count: paths.length }));
         if (!ok) return;
         await api.discard(root, paths);
-      } else if (action === "g-stage") {
+      } else if (action === "g-stage" || action === "g-add-vcs") {
         await api.stage(root, paths);
+        setCheckedAll(paths, true);
       } else if (action === "g-unstage") {
         await api.unstage(
           root,
@@ -496,6 +523,8 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
     });
   };
 
+  const setSyncDialog = useApp((s) => s.setSyncDialog);
+
   const doCommit = async (andPush: boolean) => {
     await run(async () => {
       const toStage = checkedList.filter((p) => {
@@ -511,7 +540,7 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
       await api.commit(root, message.trim(), amend, signOff);
       setMessage("");
       setAmend(false);
-      if (andPush) await api.push(root, false);
+      if (andPush) setSyncDialog("push");
     });
   };
 
@@ -588,17 +617,17 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
           className="ghost"
           onClick={() => setCheckedAll(groups.changes.map((f) => f.relPath), true)}
         >
-          All
+          {t(locale, "selectAll")}
         </button>
         <button className="ghost" onClick={() => setCheckedAll(allPaths, false)}>
-          None
+          {t(locale, "selectNone")}
         </button>
         <div className="title-spacer" />
         <button
           className="danger-text ghost"
           disabled={!checkedList.length}
           onClick={() => {
-            if (!confirm("Discard selected changes?")) return;
+            if (!confirm(t(locale, "discardSelectedConfirm"))) return;
             void run(() => api.discard(root, checkedList));
           }}
         >
@@ -644,7 +673,7 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
             disabled={busy || (!amend && !checkedList.length && !staged.length) || !message.trim()}
             onClick={() => void doCommit(true)}
           >
-            Commit and Push…
+            {t(locale, "commitAndPush")}
           </button>
         </div>
       </div>

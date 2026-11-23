@@ -1,3 +1,4 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { create } from "zustand";
 import { api } from "./api";
 import type {
@@ -25,6 +26,15 @@ function loadRecent(): string[] {
     return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
   } catch {
     return [];
+  }
+}
+
+/** Sync Windows/macOS title-bar chrome with the in-app theme. */
+async function applyNativeWindowTheme(theme: Theme): Promise<void> {
+  try {
+    await getCurrentWindow().setTheme(theme);
+  } catch {
+    // Not running under Tauri, or permission missing — ignore.
   }
 }
 
@@ -68,8 +78,10 @@ interface AppState {
   logBranch: string | null;
   logSinceDays: number | null;
   favoriteBranches: string[];
+  syncDialog: "fetch" | "pull" | "push" | null;
   setLocale: (l: Locale) => void;
   setTheme: (t: Theme) => void;
+  setSyncDialog: (d: "fetch" | "pull" | "push" | null) => void;
   setLeftTool: (t: LeftTool) => void;
   setCommitTab: (t: CommitTab) => void;
   setBottomTab: (t: BottomTab) => void;
@@ -136,15 +148,18 @@ export const useApp = create<AppState>((set, get) => ({
       return [];
     }
   })(),
+  syncDialog: null,
 
   setLocale: (locale) => {
     localStorage.setItem("git-gui.locale", locale);
     set({ locale });
   },
+  setSyncDialog: (syncDialog) => set({ syncDialog }),
   setTheme: (theme) => {
     localStorage.setItem("git-gui.theme", theme);
     document.documentElement.dataset.theme = theme;
     set({ theme });
+    void applyNativeWindowTheme(theme);
   },
   setLeftTool: (leftTool) => set({ leftTool }),
   setCommitTab: (commitTab) => set({ commitTab, selectedStash: null, blame: null }),
@@ -172,7 +187,9 @@ export const useApp = create<AppState>((set, get) => ({
     }),
 
   bootstrap: async () => {
-    document.documentElement.dataset.theme = get().theme;
+    const theme = get().theme;
+    document.documentElement.dataset.theme = theme;
+    void applyNativeWindowTheme(theme);
     try {
       const git = await api.gitDetect();
       set({ git, gitError: null });
@@ -201,9 +218,11 @@ export const useApp = create<AppState>((set, get) => ({
       error: null,
     });
     await get().refresh();
+    void api.watchRepo(root).catch(() => undefined);
   },
 
-  closeRoot: () =>
+  closeRoot: () => {
+    void api.unwatchRepo().catch(() => undefined);
     set({
       root: null,
       status: [],
@@ -220,7 +239,9 @@ export const useApp = create<AppState>((set, get) => ({
       diff: null,
       blame: null,
       outgoing: [],
-    }),
+      syncDialog: null,
+    });
+  },
 
   refresh: async () => {
     const root = get().root;

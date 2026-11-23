@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { api } from "../api";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
 import { useContextMenu, type MenuItem } from "./ContextMenu";
+import { ConfirmDialog, NewBranchDialog, PromptDialog } from "./GitDialogs";
 
 export function BranchesView() {
   const locale = useApp((s) => s.locale);
@@ -13,6 +15,11 @@ export function BranchesView() {
   const local = branches.filter((b) => !b.isRemote);
   const remote = branches.filter((b) => b.isRemote);
 
+  const [newBranch, setNewBranch] = useState<string | null>(null);
+  const [rename, setRename] = useState<string | null>(null);
+  const [del, setDel] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
   const menuFor = (name: string, isRemote: boolean, isHead: boolean): MenuItem[] => [
     { id: "new", label: tf(locale, "newBranchFrom", { name }) },
     { id: "checkout", label: t(locale, "checkout"), disabled: isHead && !isRemote },
@@ -23,27 +30,25 @@ export function BranchesView() {
   ];
 
   const act = (name: string, isRemote: boolean, id: string) => {
+    if (id === "new") {
+      setNewBranch(name);
+      return;
+    }
+    if (id === "rename") {
+      setRename(name);
+      return;
+    }
+    if (id === "delete") {
+      setDel(name);
+      return;
+    }
     void run(async () => {
-      if (id === "new") {
-        const n = prompt(tf(locale, "newBranchFrom", { name }));
-        if (!n) return;
-        await api.createBranch(root, n, name, true);
-      } else if (id === "checkout") {
+      if (id === "checkout") {
         if (isRemote) {
           const localName = name.includes("/") ? name.split("/").slice(1).join("/") : name;
           await api.createBranch(root, localName, name, true);
         } else await api.checkout(root, name, false);
       } else if (id === "push") await api.push(root, false);
-      else if (id === "rename") {
-        const n = prompt(t(locale, "renameTo"), name);
-        if (!n || n === name) return;
-        await api.createBranch(root, n, name, false);
-        await api.deleteBranch(root, name, true);
-        await api.checkout(root, n, false);
-      } else if (id === "delete") {
-        if (!confirm(tf(locale, "deleteBranchConfirm", { name }))) return;
-        await api.deleteBranch(root, name, false);
-      }
     });
   };
 
@@ -52,11 +57,7 @@ export function BranchesView() {
       <button
         className="primary"
         style={{ alignSelf: "flex-start" }}
-        onClick={() => {
-          const name = prompt(t(locale, "createBranch"));
-          if (!name) return;
-          void run(() => api.createBranch(root, name, null, true));
-        }}
+        onClick={() => setCreateOpen(true)}
       >
         {t(locale, "createBranch")}
       </button>
@@ -104,6 +105,57 @@ export function BranchesView() {
         </div>
       ))}
       {menuNode}
+
+      <NewBranchDialog
+        open={createOpen}
+        startPoint="HEAD"
+        onClose={() => setCreateOpen(false)}
+        onConfirm={(name) => {
+          setCreateOpen(false);
+          void run(() => api.createBranch(root, name, null, true));
+        }}
+      />
+      <NewBranchDialog
+        open={!!newBranch}
+        startPoint={newBranch ?? ""}
+        onClose={() => setNewBranch(null)}
+        onConfirm={(n) => {
+          const from = newBranch;
+          setNewBranch(null);
+          if (!from) return;
+          void run(() => api.createBranch(root, n, from, true));
+        }}
+      />
+      <PromptDialog
+        open={!!rename}
+        title={t(locale, "renameBranchTitle")}
+        label={t(locale, "renameTo")}
+        initial={rename ?? ""}
+        onClose={() => setRename(null)}
+        onConfirm={(n) => {
+          const old = rename;
+          setRename(null);
+          if (!old || n === old) return;
+          void run(async () => {
+            await api.createBranch(root, n, old, false);
+            await api.deleteBranch(root, old, true);
+            await api.checkout(root, n, false);
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={!!del}
+        title={t(locale, "deleteBranchTitle")}
+        message={del ? tf(locale, "deleteBranchConfirm", { name: del }) : ""}
+        danger
+        onClose={() => setDel(null)}
+        onConfirm={() => {
+          const name = del;
+          setDel(null);
+          if (!name) return;
+          void run(() => api.deleteBranch(root, name, false));
+        }}
+      />
     </div>
   );
 }

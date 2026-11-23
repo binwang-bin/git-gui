@@ -709,14 +709,52 @@ impl Repo {
         Ok(format!("{}{}", out.stdout, out.stderr))
     }
 
-    pub fn stage_hunk(&self, path: &str, patch: &str) -> Result<()> {
-        cli::run_stdin(
-            self.root(),
-            &["apply", "--cached", "--unidiff-zero", "-"],
-            Some(patch),
-        )
-        .or_else(|_| cli::run_stdin(self.root(), &["apply", "--cached", "-"], Some(patch)))?;
-        let _ = path;
+    pub fn stage_hunk(&self, _path: &str, patch: &str) -> Result<()> {
+        self.apply_patch(patch, true, false)
+    }
+
+    /// Apply a unified diff patch.
+    /// - `cached`: apply to index (`--cached`)
+    /// - `reverse`: reverse the patch (`--reverse`) — discard staged/worktree lines
+    pub fn apply_patch(&self, patch: &str, cached: bool, reverse: bool) -> Result<()> {
+        let mut args: Vec<&str> = vec!["apply"];
+        if cached {
+            args.push("--cached");
+        }
+        if reverse {
+            args.push("--reverse");
+        }
+        args.push("--unidiff-zero");
+        args.push("-");
+        cli::run_stdin(self.root(), &args, Some(patch)).or_else(|_| {
+            let mut args2: Vec<&str> = vec!["apply"];
+            if cached {
+                args2.push("--cached");
+            }
+            if reverse {
+                args2.push("--reverse");
+            }
+            args2.push("-");
+            cli::run_stdin(self.root(), &args2, Some(patch))
+        })?;
+        Ok(())
+    }
+
+    /// Resolve conflicted paths with ours/theirs, then stage.
+    pub fn conflict_resolve(&self, paths: &[String], side: &str) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let flag = match side {
+            "ours" => "--ours",
+            "theirs" => "--theirs",
+            _ => return Err(Error::msg("side must be ours or theirs")),
+        };
+        let mut args: Vec<&str> = vec!["checkout", flag, "--"];
+        let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+        args.extend(refs.iter().copied());
+        cli::run(self.root(), &args)?;
+        self.stage(paths)?;
         Ok(())
     }
 
