@@ -105,7 +105,8 @@ impl Repo {
             let refname = parts.next().unwrap_or("");
             let track = parts.next().unwrap_or("");
             let is_remote = refname.starts_with("refs/remotes/");
-            if name == "origin/HEAD" || name.ends_with("/HEAD") {
+            // origin/HEAD short name is often just "origin" (no slash) — skip by full refname.
+            if refname.ends_with("/HEAD") || name.ends_with("/HEAD") {
                 continue;
             }
             let (ahead, behind) = if is_remote {

@@ -270,7 +270,7 @@ function BranchTreePanel() {
   const remote = useMemo(
     () =>
       branches
-        .filter((b) => b.isRemote)
+        .filter((b) => b.isRemote && b.name.includes("/"))
         .filter((b) => fuzzy(b.name, query))
         .sort((a, b) => a.name.localeCompare(b.name)),
     [branches, query],
@@ -279,7 +279,9 @@ function BranchTreePanel() {
     const map = new Map<string, Branch[]>();
     for (const b of remote) {
       const slash = b.name.indexOf("/");
-      const remoteName = slash > 0 ? b.name.slice(0, slash) : "remote";
+      // Skip remote HEAD short names like "origin" (no slash) — not a real branch.
+      if (slash <= 0) continue;
+      const remoteName = b.name.slice(0, slash);
       const list = map.get(remoteName) ?? [];
       list.push(b);
       map.set(remoteName, list);
