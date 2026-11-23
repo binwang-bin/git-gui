@@ -40,6 +40,12 @@ pub struct Branch {
     pub is_head: bool,
     pub upstream: Option<String>,
     pub commit: Option<String>,
+    /// Commits ahead of upstream (local only; 0 for remotes / no upstream).
+    #[serde(default)]
+    pub ahead: u32,
+    /// Commits behind upstream (local only; 0 for remotes / no upstream).
+    #[serde(default)]
+    pub behind: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

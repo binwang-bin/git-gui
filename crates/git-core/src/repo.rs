@@ -90,7 +90,7 @@ impl Repo {
             self.root(),
             &[
                 "for-each-ref",
-                "--format=%(refname:short)%00%(objectname)%00%(HEAD)%00%(upstream:short)%00%(refname)",
+                "--format=%(refname:short)%00%(objectname)%00%(HEAD)%00%(upstream:short)%00%(refname)%00%(upstream:track)",
                 "refs/heads",
                 "refs/remotes",
             ],
@@ -103,16 +103,24 @@ impl Repo {
             let is_head = parts.next() == Some("*");
             let upstream = parts.next().map(|s| s.to_string()).filter(|s| !s.is_empty());
             let refname = parts.next().unwrap_or("");
+            let track = parts.next().unwrap_or("");
             let is_remote = refname.starts_with("refs/remotes/");
             if name == "origin/HEAD" || name.ends_with("/HEAD") {
                 continue;
             }
+            let (ahead, behind) = if is_remote {
+                (0, 0)
+            } else {
+                parse_upstream_track(track)
+            };
             branches.push(Branch {
                 name,
                 is_remote,
                 is_head,
                 upstream,
                 commit,
+                ahead,
+                behind,
             });
         }
         Ok(branches)
@@ -803,6 +811,29 @@ impl Repo {
             since: None,
         })
     }
+}
+
+/// Parse `%(upstream:track)` like `[ahead 1, behind 2]` / `[ahead 1]` / `[behind 2]`.
+fn parse_upstream_track(track: &str) -> (u32, u32) {
+    let mut ahead = 0u32;
+    let mut behind = 0u32;
+    if let Some(i) = track.find("ahead ") {
+        ahead = track[i + 6..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
+    }
+    if let Some(i) = track.find("behind ") {
+        behind = track[i + 7..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
+    }
+    (ahead, behind)
 }
 
 /// Split `origin/feature/x` into (`origin`, `feature/x`).

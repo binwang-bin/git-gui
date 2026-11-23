@@ -243,6 +243,7 @@ function BranchTreePanel() {
   const { openMenu, menuNode } = useContextMenu();
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState({ local: true, remote: true });
+  const [expandedRemotes, setExpandedRemotes] = useState<Record<string, boolean>>({});
   const [hidden, setHidden] = useState(false);
   const [selected, setSelected] = useState<PaneSelection>({ kind: "head" });
   const [remotesOpen, setRemotesOpen] = useState(false);
@@ -274,6 +275,19 @@ function BranchTreePanel() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [branches, query],
   );
+  const remoteGroups = useMemo(() => {
+    const map = new Map<string, Branch[]>();
+    for (const b of remote) {
+      const slash = b.name.indexOf("/");
+      const remoteName = slash > 0 ? b.name.slice(0, slash) : "remote";
+      const list = map.get(remoteName) ?? [];
+      list.push(b);
+      map.set(remoteName, list);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [remote]);
+
+  const isRemoteGroupOpen = (name: string) => expandedRemotes[name] !== false;
   const favoriteList = useMemo(
     () =>
       branches
@@ -517,9 +531,13 @@ function BranchTreePanel() {
     });
   };
 
-  const row = (b: Branch, nested: boolean) => {
+  const row = (b: Branch, nested: boolean, displayName?: string) => {
     const paneSelected = selected.kind === "branch" && selected.branch.name === b.name;
     const logActive = logBranch === b.name;
+    const label = displayName ?? b.name;
+    const tip = b.upstream
+      ? `${b.name} → ${b.upstream}`
+      : b.name;
     return (
       <div
         key={b.name}
@@ -544,10 +562,16 @@ function BranchTreePanel() {
         ) : (
           <span className="branch-ico">⎇</span>
         )}
-        <span className="branch-name" title={b.name}>
-          {b.name}
+        <span className="branch-name" title={tip}>
+          {label}
           {b.isHead ? ` (${t(locale, "current")})` : ""}
         </span>
+        {!b.isRemote && (b.ahead > 0 || b.behind > 0) ? (
+          <span className="branch-track" title={b.upstream ?? ""}>
+            {b.ahead > 0 ? <span className="ahead">↗{b.ahead}</span> : null}
+            {b.behind > 0 ? <span className="behind">↘{b.behind}</span> : null}
+          </span>
+        ) : null}
       </div>
     );
   };
@@ -713,7 +737,35 @@ function BranchTreePanel() {
           {t(locale, "remote")}
           <span className="count">{remote.length}</span>
         </div>
-        {(expanded.remote || query) && remote.map((b) => row(b, true))}
+        {(expanded.remote || query) &&
+          remoteGroups.map(([remoteName, list]) => {
+            const open = query || isRemoteGroupOpen(remoteName);
+            return (
+              <div key={`rg-${remoteName}`}>
+                <div
+                  className="tree-group clickable nested"
+                  onClick={() =>
+                    setExpandedRemotes((s) => ({
+                      ...s,
+                      [remoteName]: !isRemoteGroupOpen(remoteName),
+                    }))
+                  }
+                >
+                  <span className="twisty">{open ? "▾" : "▸"}</span>
+                  {remoteName}
+                  <span className="count">{list.length}</span>
+                </div>
+                {open &&
+                  list.map((b) => {
+                    const short =
+                      b.name.startsWith(`${remoteName}/`)
+                        ? b.name.slice(remoteName.length + 1)
+                        : b.name;
+                    return row(b, true, short);
+                  })}
+              </div>
+            );
+          })}
         {menuNode}
         <RemotesDialog open={remotesOpen} onClose={() => setRemotesOpen(false)} />
         <NewBranchDialog

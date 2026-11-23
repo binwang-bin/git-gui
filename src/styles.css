@@ -1102,6 +1102,27 @@ body.resizing-row * {
   font-size: var(--fs-small);
 }
 
+.tree-item .branch-track {
+  flex: none;
+  display: inline-flex;
+  gap: 4px;
+  font-size: var(--fs-tiny);
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+
+.tree-item .branch-track .ahead {
+  color: #3d9a4a;
+}
+
+.tree-item .branch-track .behind {
+  color: #c77d2a;
+}
+
+.tree-group.nested {
+  padding-left: 18px;
+}
+
 .tree-item .fav {
   opacity: 0;
   width: 18px;

@@ -29,6 +29,8 @@ export interface Branch {
   isHead: boolean;
   upstream: string | null;
   commit: string | null;
+  ahead: number;
+  behind: number;
 }
 
 export interface Commit {
