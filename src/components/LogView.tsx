@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { api } from "../api";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
@@ -15,6 +22,18 @@ import {
   ResetDialog,
 } from "./GitDialogs";
 import { RemotesDialog, RemotesView } from "./RemotesView";
+
+const BRANCH_WIDTH_KEY = "git-gui.branchWidth";
+const BRANCH_WIDTH_MIN = 160;
+const BRANCH_WIDTH_MAX = 480;
+const BRANCH_WIDTH_DEFAULT = 228;
+
+function loadBranchWidth(): number {
+  const n = Number(localStorage.getItem(BRANCH_WIDTH_KEY));
+  return Number.isFinite(n) && n >= BRANCH_WIDTH_MIN && n <= BRANCH_WIDTH_MAX
+    ? n
+    : BRANCH_WIDTH_DEFAULT;
+}
 
 function fuzzy(label: string, query: string): boolean {
   if (!query.trim()) return true;
@@ -245,11 +264,44 @@ function BranchTreePanel() {
   const [expanded, setExpanded] = useState({ local: true, remote: true });
   const [expandedRemotes, setExpandedRemotes] = useState<Record<string, boolean>>({});
   const [hidden, setHidden] = useState(false);
+  const [branchWidth, setBranchWidth] = useState(loadBranchWidth);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const draggingWidth = useRef(false);
   const [selected, setSelected] = useState<PaneSelection>({ kind: "head" });
   const [remotesOpen, setRemotesOpen] = useState(false);
   const [dlgNew, setDlgNew] = useState<{ start: string } | null>(null);
   const [dlgRename, setDlgRename] = useState<string | null>(null);
   const [dlgDelete, setDlgDelete] = useState<string | null>(null);
+
+  const clampBranchWidth = useCallback((px: number) => {
+    const parent = paneRef.current?.parentElement?.clientWidth ?? window.innerWidth;
+    const max = Math.min(BRANCH_WIDTH_MAX, Math.max(BRANCH_WIDTH_MIN, parent - 200));
+    return Math.min(max, Math.max(BRANCH_WIDTH_MIN, Math.round(px)));
+  }, []);
+
+  const onBranchResizeStart = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggingWidth.current = true;
+    document.body.classList.add("resizing-col");
+    const onMove = (ev: MouseEvent) => {
+      if (!draggingWidth.current || !paneRef.current) return;
+      const left = paneRef.current.getBoundingClientRect().left;
+      setBranchWidth(clampBranchWidth(ev.clientX - left));
+    };
+    const onUp = () => {
+      draggingWidth.current = false;
+      document.body.classList.remove("resizing-col");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setBranchWidth((w) => {
+        localStorage.setItem(BRANCH_WIDTH_KEY, String(w));
+        return w;
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   // Keep selection object fresh after refresh (same name → latest Branch).
   useEffect(() => {
@@ -569,7 +621,14 @@ function BranchTreePanel() {
           {b.isHead ? ` (${t(locale, "current")})` : ""}
         </span>
         {!b.isRemote && (b.ahead > 0 || b.behind > 0) ? (
-          <span className="branch-track" title={b.upstream ?? ""}>
+          <span
+            className="branch-track"
+            title={
+              b.upstream
+                ? `${b.upstream}  ↑${b.ahead} ↓${b.behind}`
+                : `↑${b.ahead} ↓${b.behind}`
+            }
+          >
             {b.ahead > 0 ? <span className="ahead">↗{b.ahead}</span> : null}
             {b.behind > 0 ? <span className="behind">↘{b.behind}</span> : null}
           </span>
@@ -596,7 +655,11 @@ function BranchTreePanel() {
   }
 
   return (
-    <div className="branch-pane">
+    <div
+      className="branch-pane"
+      ref={paneRef}
+      style={{ width: branchWidth, ["--branch-width" as string]: `${branchWidth}px` }}
+    >
       <div className="branch-tools" role="toolbar" aria-orientation="vertical" aria-label="Branches">
         <button
           type="button"
@@ -813,6 +876,13 @@ function BranchTreePanel() {
           }}
         />
       </div>
+      <div
+        className="h-split"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize branches"
+        onMouseDown={onBranchResizeStart}
+      />
     </div>
   );
 }
