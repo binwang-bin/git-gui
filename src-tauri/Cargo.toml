@@ -1,8 +1,8 @@
 [package]
 name = "git-gui"
 version.workspace = true
-description = "Cross-platform Git desktop client"
-authors = ["git-gui"]
+description = "IdeVcs — cross-platform Git desktop client"
+authors = ["idevcs"]
 edition.workspace = true
 license.workspace = true
 

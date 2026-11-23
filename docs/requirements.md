@@ -1,9 +1,10 @@
-# 跨平台 Git 桌面客户端需求
+# IdeVcs — 跨平台 Git 桌面客户端需求
 
 ## 产品结论
 
 | 项 | 决定 |
 |---|---|
+| 产品名 | IdeVcs |
 | 定位 | 独立 Git 客户端（对标 Fork / SourceTree / GitKraken），交互参考 IDEA / OpenIDEA Git |
 | 平台 | Windows / Linux / macOS |
 | 技术栈 | Tauri + Rust + Vite/React/TS；读路径用 gitoxide (`gix`)，写路径用系统 `git` CLI |

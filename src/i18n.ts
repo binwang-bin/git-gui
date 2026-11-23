@@ -2,7 +2,7 @@ import type { Locale } from "./types";
 
 const messages = {
   en: {
-    appName: "Git GUI",
+    appName: "IdeVcs",
     welcome: "Open a Git repository to get started",
     open: "Open",
     openAnother: "Open Another…",
@@ -197,7 +197,7 @@ const messages = {
     repositoryUrl: "Repository URL",
   },
   zh: {
-    appName: "Git GUI",
+    appName: "IdeVcs",
     welcome: "打开一个 Git 仓库开始使用",
     open: "打开",
     openAnother: "再打开一个…",

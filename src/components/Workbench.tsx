@@ -123,7 +123,7 @@ export function Workbench() {
     <div className="app" style={{ position: "relative" }}>
       <div className="titlebar">
         <div className="brand">
-          <span className="brand-mark">GG</span>
+          <span className="brand-mark">IV</span>
           <span>{name}</span>
         </div>
         <button

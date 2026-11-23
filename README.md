@@ -1,4 +1,4 @@
-# Git GUI
+# IdeVcs
 
 Cross-platform Git desktop client inspired by IntelliJ IDEA / OpenIDEA Git workflows.
 

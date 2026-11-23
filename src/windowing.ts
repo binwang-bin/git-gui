@@ -8,16 +8,16 @@ function repoDisplayName(path: string): string {
 export async function setWindowTitleForRepo(root: string | null): Promise<void> {
   const win = getCurrentWindow();
   if (!root) {
-    await win.setTitle("Git GUI");
+    await win.setTitle("IdeVcs");
     return;
   }
-  await win.setTitle(`${repoDisplayName(root)} — Git GUI`);
+  await win.setTitle(`${repoDisplayName(root)} — IdeVcs`);
 }
 
 /** Open `path` in a brand-new OS window; current window is unchanged. */
 export async function openRepoInNewWindow(path: string): Promise<void> {
   const label = `repo-${Date.now()}`;
-  const title = `${repoDisplayName(path)} — Git GUI`;
+  const title = `${repoDisplayName(path)} — IdeVcs`;
   const qs = `root=${encodeURIComponent(path)}`;
   const webview = new WebviewWindow(label, {
     url: `index.html?${qs}`,

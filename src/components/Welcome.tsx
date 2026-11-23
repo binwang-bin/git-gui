@@ -46,7 +46,7 @@ export function Welcome() {
     <div className="welcome">
       <div className="welcome-card">
         <div className="brand">
-          <span className="brand-mark">GG</span>
+          <span className="brand-mark">IV</span>
           <h1 style={{ margin: 0 }}>{t(locale, "appName")}</h1>
         </div>
         <p>{t(locale, "welcome")}</p>

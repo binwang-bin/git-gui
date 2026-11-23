@@ -279,10 +279,11 @@ textarea {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  background: linear-gradient(135deg, #4d8dff, #2a4fd4);
+  background: linear-gradient(135deg, #3ddcff, #2a4a5e);
   color: white;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
+  letter-spacing: -0.4px;
   display: grid;
   place-items: center;
 }
