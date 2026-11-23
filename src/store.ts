@@ -62,6 +62,8 @@ interface AppState {
   selectedPaths: string[];
   checkedPaths: Record<string, boolean>;
   selectedStash: number | null;
+  selectedStashPath: string | null;
+  stashFiles: ChangedFile[];
   selectedCommit: Commit | null;
   commitFiles: ChangedFile[];
   diff: FileDiff | null;
@@ -102,6 +104,7 @@ interface AppState {
   selectFile: (relPath: string, staged: boolean) => Promise<void>;
   clearDiff: () => void;
   selectStash: (index: number) => Promise<void>;
+  selectStashFile: (index: number, path: string) => Promise<void>;
   selectCommit: (c: Commit) => Promise<void>;
   selectCommitFile: (path: string) => Promise<void>;
   run: <T>(fn: () => Promise<T>) => Promise<T | null>;
@@ -126,6 +129,8 @@ export const useApp = create<AppState>((set, get) => ({
   selectedPaths: [],
   checkedPaths: {},
   selectedStash: null,
+  selectedStashPath: null,
+  stashFiles: [],
   selectedCommit: null,
   commitFiles: [],
   diff: null,
@@ -163,7 +168,8 @@ export const useApp = create<AppState>((set, get) => ({
     void applyNativeWindowTheme(theme);
   },
   setLeftTool: (leftTool) => set({ leftTool }),
-  setCommitTab: (commitTab) => set({ commitTab, selectedStash: null, blame: null }),
+  setCommitTab: (commitTab) =>
+    set({ commitTab, selectedStash: null, selectedStashPath: null, stashFiles: [], blame: null }),
   setBottomTab: (bottomTab) => set({ bottomTab }),
   setMessage: (message) => set({ message }),
   setAmend: (amend) => set({ amend }),
@@ -212,6 +218,8 @@ export const useApp = create<AppState>((set, get) => ({
       selectedPaths: [],
       checkedPaths: {},
       selectedStash: null,
+      selectedStashPath: null,
+      stashFiles: [],
       selectedCommit: null,
       diff: null,
       blame: null,
@@ -237,6 +245,8 @@ export const useApp = create<AppState>((set, get) => ({
       selectedPaths: [],
       checkedPaths: {},
       selectedStash: null,
+      selectedStashPath: null,
+      stashFiles: [],
       selectedCommit: null,
       commitFiles: [],
       diff: null,
@@ -305,6 +315,8 @@ export const useApp = create<AppState>((set, get) => ({
       blame: null,
       selectedCommit: null,
       selectedStash: null,
+      selectedStashPath: null,
+      stashFiles: [],
     });
     try {
       const diff = await api.fileDiff(root, relPath, staged);
@@ -320,6 +332,8 @@ export const useApp = create<AppState>((set, get) => ({
       blame: null,
       selectedPaths: [],
       selectedStash: null,
+      selectedStashPath: null,
+      stashFiles: [],
       selectedCommit: null,
       commitFiles: [],
     });
@@ -328,9 +342,45 @@ export const useApp = create<AppState>((set, get) => ({
   selectStash: async (index) => {
     const root = get().root;
     if (!root) return;
-    set({ selectedStash: index, selectedPaths: [], selectedCommit: null, blame: null });
+    set({
+      selectedStash: index,
+      selectedStashPath: null,
+      selectedPaths: [],
+      selectedCommit: null,
+      blame: null,
+      stashFiles: [],
+      diff: null,
+    });
     try {
-      const diff = await api.stashDiff(root, index);
+      const stashFiles = await api.stashFiles(root, index);
+      set({ stashFiles });
+      if (stashFiles[0]) {
+        const path = stashFiles[0].path;
+        const diff = await api.stashFileDiff(root, index, path);
+        set({ selectedStashPath: path, diff });
+      }
+    } catch (e) {
+      set({ stashFiles: [], diff: null, error: String(e) });
+    }
+  },
+
+  selectStashFile: async (index, path) => {
+    const root = get().root;
+    if (!root) return;
+    const needFiles = get().selectedStash !== index || get().stashFiles.length === 0;
+    set({
+      selectedStash: index,
+      selectedStashPath: path,
+      selectedPaths: [],
+      selectedCommit: null,
+      blame: null,
+    });
+    try {
+      if (needFiles) {
+        const stashFiles = await api.stashFiles(root, index);
+        set({ stashFiles });
+      }
+      const diff = await api.stashFileDiff(root, index, path);
       set({ diff });
     } catch (e) {
       set({ diff: null, error: String(e) });
@@ -340,7 +390,13 @@ export const useApp = create<AppState>((set, get) => ({
   selectCommit: async (c) => {
     const root = get().root;
     if (!root) return;
-    set({ selectedCommit: c, blame: null, selectedStash: null });
+    set({
+      selectedCommit: c,
+      blame: null,
+      selectedStash: null,
+      selectedStashPath: null,
+      stashFiles: [],
+    });
     try {
       const commitFiles = await api.commitFiles(root, c.id);
       set({ commitFiles, diff: null });

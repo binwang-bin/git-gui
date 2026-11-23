@@ -68,6 +68,8 @@ pub fn run() {
             commands::repo_log_users,
             commands::repo_list_dir,
             commands::repo_stash_diff,
+            commands::repo_stash_files,
+            commands::repo_stash_file_diff,
             commands::watch_repo,
             commands::unwatch_repo,
         ])

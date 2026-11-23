@@ -2022,9 +2022,15 @@ body.resizing-col * {
   padding: 4px 0;
 }
 
-.stash-row {
-  padding: 8px 12px;
+.stash-block {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.stash-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 8px 6px 4px;
   cursor: default;
 }
 
@@ -2036,10 +2042,28 @@ body.resizing-col * {
   background: var(--bg-selected);
 }
 
+.stash-twisty {
+  flex: none;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.stash-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .stash-title {
   color: var(--fg-strong);
   font-size: var(--fs-ui);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2051,6 +2075,66 @@ body.resizing-col * {
   gap: 8px;
   color: var(--fg-subtle);
   font-size: var(--fs-tiny);
+}
+
+.stash-files {
+  padding: 0 0 4px;
+}
+
+.stash-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px 0 22px;
+  cursor: default;
+  font-size: var(--fs-small);
+}
+
+.stash-file-row:hover {
+  background: var(--bg-hover);
+}
+
+.stash-file-row.selected {
+  background: var(--bg-selected);
+}
+
+.stash-file-row .status {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg-subtle);
+}
+
+.stash-file-row .status.modified {
+  color: var(--vcs-modified, #6897bb);
+}
+
+.stash-file-row .status.added,
+.stash-file-row .status.untracked {
+  color: var(--vcs-added, #629755);
+}
+
+.stash-file-row .status.deleted {
+  color: var(--vcs-deleted, #6f737a);
+}
+
+.stash-file-row .basename {
+  color: var(--accent, #4a9eff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-file-row .dirname {
+  color: var(--fg-faint, var(--fg-subtle));
+  font-size: var(--fs-tiny);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .project-panel {

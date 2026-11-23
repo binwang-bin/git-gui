@@ -9,6 +9,7 @@ export function CommitToolWindow() {
   const locale = useApp((s) => s.locale);
   const commitTab = useApp((s) => s.commitTab);
   const setCommitTab = useApp((s) => s.setCommitTab);
+  const stashCount = useApp((s) => s.stashes.length);
 
   return (
     <>
@@ -25,6 +26,7 @@ export function CommitToolWindow() {
             onClick={() => setCommitTab("stash")}
           >
             {t(locale, "stash")}
+            {stashCount > 0 ? ` (${stashCount})` : ""}
           </button>
         </div>
         {commitTab === "changes" ? <ChangesView embedded /> : <StashView />}

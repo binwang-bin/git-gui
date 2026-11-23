@@ -103,7 +103,11 @@ export const api = {
   listDir: (root: string, path: string) =>
     invoke<import("./types").DirEntry[]>("repo_list_dir", { root, path }),
   stashDiff: (root: string, index: number) =>
-    invoke<import("./types").FileDiff>("repo_stash_diff", { root, index }),
+    invoke<FileDiff>("repo_stash_diff", { root, index }),
+  stashFiles: (root: string, index: number) =>
+    invoke<ChangedFile[]>("repo_stash_files", { root, index }),
+  stashFileDiff: (root: string, index: number, path: string) =>
+    invoke<FileDiff>("repo_stash_file_diff", { root, index, path }),
   watchRepo: (root: string) => invoke<void>("watch_repo", { root }),
   unwatchRepo: () => invoke<void>("unwatch_repo"),
 };

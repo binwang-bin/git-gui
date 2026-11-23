@@ -504,8 +504,62 @@ impl Repo {
 
     pub fn stash_diff(&self, index: u32) -> Result<FileDiff> {
         let target = format!("stash@{{{index}}}");
-        let out = cli::run(self.root(), &["stash", "show", "-p", "--no-color", &target])?;
+        let out = cli::run(
+            self.root(),
+            &["stash", "show", "-p", "--no-color", "--include-untracked", &target],
+        )?;
         Ok(crate::diff::parse_diff(&out.stdout, &target))
+    }
+
+    pub fn stash_files(&self, index: u32) -> Result<Vec<ChangedFile>> {
+        let target = format!("stash@{{{index}}}");
+        let out = cli::run(
+            self.root(),
+            &[
+                "stash",
+                "show",
+                "--name-status",
+                "--include-untracked",
+                &target,
+            ],
+        )?;
+        Ok(parse_name_status(&out.stdout))
+    }
+
+    pub fn stash_file_diff(&self, index: u32, path: &str) -> Result<FileDiff> {
+        let target = format!("stash@{{{index}}}");
+        // Working-tree side of the stash vs its first parent (HEAD at stash time).
+        let parent = format!("{target}^1");
+        let out = cli::run(
+            self.root(),
+            &[
+                "diff",
+                "--no-color",
+                "--find-renames",
+                &parent,
+                &target,
+                "--",
+                path,
+            ],
+        )?;
+        if !out.stdout.trim().is_empty() {
+            return Ok(crate::diff::parse_diff(&out.stdout, path));
+        }
+        // Untracked-only paths may only appear via stash show -p -- path.
+        let patch = cli::run(
+            self.root(),
+            &[
+                "stash",
+                "show",
+                "-p",
+                "--no-color",
+                "--include-untracked",
+                &target,
+                "--",
+                path,
+            ],
+        )?;
+        Ok(crate::diff::parse_diff(&patch.stdout, path))
     }
 
     pub fn list_dir(&self, rel: &str) -> Result<Vec<DirEntry>> {

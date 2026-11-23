@@ -489,6 +489,31 @@ pub async fn repo_stash_diff(root: String, index: u32) -> Result<git_core::FileD
 }
 
 #[tauri::command]
+pub async fn repo_stash_files(
+    root: String,
+    index: u32,
+) -> Result<Vec<git_core::ChangedFile>, String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.stash_files(index).map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_stash_file_diff(
+    root: String,
+    index: u32,
+    path: String,
+) -> Result<git_core::FileDiff, String> {
+    tokio::task::spawn_blocking(move || {
+        repo(&root)?
+            .stash_file_diff(index, &path)
+            .map_err(map_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub fn watch_repo(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
