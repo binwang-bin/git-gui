@@ -1,48 +1,30 @@
 ######################################################################
 # Build Tools
-
-.gradle
 /build/
-!gradle/wrapper/gradle-wrapper.jar
-
 target/
-!.mvn/wrapper/maven-wrapper.jar
+dist/
+node_modules/
 
 ######################################################################
-# IDE
+# IDE / reference
 /openidea
-
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-
-### IntelliJ IDEA ###
 .idea
 *.iws
 *.iml
 *.ipr
-
-### JRebel ###
-rebel.xml
-
-### NetBeans ###
-nbproject/private/
-build/*
-nbbuild/
-dist/
-nbdist/
-.nb-gradle/
+.vscode/*
+!.vscode/extensions.json
 
 ######################################################################
 # Others
 *.log
 *.xml.versionsBackup
 *.swp
+.DS_Store
+Thumbs.db
 
-!*/build/*.java
-!*/build/*.html
-!*/build/*.xml
+# Tauri / env
+.env
+.env.*
+!.env.example
+src-tauri/gen/
