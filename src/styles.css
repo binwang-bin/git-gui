@@ -1896,13 +1896,6 @@ body.resizing-col * {
   white-space: nowrap;
 }
 
-.titlebar .sync-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-}
-
 .remotes-table {
   flex: 1;
   min-height: 160px;

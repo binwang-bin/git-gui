@@ -131,33 +131,6 @@ export function Workbench() {
             </span>
           )}
         </button>
-        <div className="sync-actions">
-          <button
-            className="ghost"
-            disabled={busy}
-            title={t(locale, "fetch")}
-            onClick={() => setSyncDialog("fetch")}
-          >
-            {t(locale, "fetch")}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy}
-            title={t(locale, "pull")}
-            onClick={() => setSyncDialog("pull")}
-          >
-            {t(locale, "pull")}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy}
-            title={t(locale, "push")}
-            onClick={() => setSyncDialog("push")}
-          >
-            {t(locale, "push")}
-            {branch && branch.ahead > 0 ? ` (${branch.ahead})` : ""}
-          </button>
-        </div>
         <div className="title-spacer" />
         <div className="title-actions">
           <button className="icon-btn" title={t(locale, "refresh")} onClick={() => void refresh()}>
