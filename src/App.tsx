@@ -4,6 +4,7 @@ import { Welcome } from "./components/Welcome";
 import { Workbench } from "./components/Workbench";
 import { bindShortcuts } from "./shortcuts";
 import { useApp } from "./store";
+import { DialogHost } from "./uiDialogs";
 
 function readRootQuery(): string | null {
   try {
@@ -55,5 +56,10 @@ export default function App() {
     };
   }, []);
 
-  return root ? <Workbench /> : <Welcome />;
+  return (
+    <>
+      {root ? <Workbench /> : <Welcome />}
+      <DialogHost />
+    </>
+  );
 }

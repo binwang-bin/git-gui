@@ -1,4 +1,4 @@
-use git_core::{self, LogQuery, ResetMode};
+use git_core::{self, LogPage, LogQuery, MergeVersions, ResetMode};
 use std::path::PathBuf;
 
 fn map_err(e: git_core::Error) -> String {
@@ -69,7 +69,7 @@ pub async fn repo_branches(root: String) -> Result<Vec<git_core::Branch>, String
 }
 
 #[tauri::command]
-pub async fn repo_log(root: String, query: LogQuery) -> Result<Vec<git_core::Commit>, String> {
+pub async fn repo_log(root: String, query: LogQuery) -> Result<LogPage, String> {
     tokio::task::spawn_blocking(move || repo(&root)?.log(&query).map_err(map_err))
         .await
         .map_err(|e| e.to_string())?
@@ -78,6 +78,13 @@ pub async fn repo_log(root: String, query: LogQuery) -> Result<Vec<git_core::Com
 #[tauri::command]
 pub async fn repo_commit_files(root: String, commit: String) -> Result<Vec<git_core::ChangedFile>, String> {
     tokio::task::spawn_blocking(move || repo(&root)?.commit_files(&commit).map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_commit_message(root: String, commit: String) -> Result<(String, String), String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.commit_message(&commit).map_err(map_err))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -449,6 +456,24 @@ pub async fn repo_conflict_resolve(
 }
 
 #[tauri::command]
+pub async fn repo_conflict_versions(root: String, path: String) -> Result<MergeVersions, String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.conflict_versions(&path).map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_write_and_stage(root: String, path: String, contents: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        repo(&root)?
+            .write_and_stage(&path, &contents)
+            .map_err(map_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn repo_blame(root: String, path: String) -> Result<Vec<git_core::BlameLine>, String> {
     tokio::task::spawn_blocking(move || repo(&root)?.blame(&path).map_err(map_err))
         .await
@@ -470,6 +495,13 @@ pub async fn open_path(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn repo_log_users(root: String) -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(move || repo(&root)?.log_users().map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_config_get(root: String, key: String) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.config_get(&key).map_err(map_err))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -507,6 +539,57 @@ pub async fn repo_stash_file_diff(
     tokio::task::spawn_blocking(move || {
         repo(&root)?
             .stash_file_diff(index, &path)
+            .map_err(map_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_shelves(root: String) -> Result<Vec<git_core::ShelfEntry>, String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.shelves().map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_shelve(
+    root: String,
+    name: String,
+    paths: Vec<String>,
+) -> Result<git_core::ShelfEntry, String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.shelve(&name, &paths).map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_unshelve(root: String, id: String, drop_after: bool) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        repo(&root)?
+            .unshelve(&id, drop_after)
+            .map_err(map_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_drop_shelf(root: String, id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || repo(&root)?.drop_shelf(&id).map_err(map_err))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_interactive_rebase(
+    root: String,
+    base: String,
+    entries: Vec<git_core::RebaseEntry>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        repo(&root)?
+            .interactive_rebase(&base, &entries)
             .map_err(map_err)
     })
     .await

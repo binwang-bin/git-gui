@@ -32,7 +32,7 @@ export function CommitDetailPanel() {
         <div>
           <code>{commit.shortId}</code> · {commit.author}
         </div>
-        <div>{new Date(commit.time * 1000).toLocaleString()}</div>
+        <div>{commit.time > 0 ? new Date(commit.time * 1000).toLocaleString() : "—"}</div>
         <div style={{ marginTop: 6, color: "var(--fg-strong)" }}>{commit.summary}</div>
         {commit.body ? <div style={{ marginTop: 4 }}>{commit.body}</div> : null}
       </div>

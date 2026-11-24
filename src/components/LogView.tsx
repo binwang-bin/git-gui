@@ -6,11 +6,13 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "../api";
 import { t, tf } from "../i18n";
-import { useApp } from "../store";
-import type { Branch, ResetMode } from "../types";
-import { buildCommitGraph } from "../gitGraph";
+import { LOG_PAGE_SIZE, ME, useApp } from "../store";
+import type { Branch, Commit, LogDateFilter, ResetMode } from "../types";
+import { askAlert, chooseDateRange, chooseMany } from "../uiDialogs";
+import { ROW, presentLogGraph } from "../gitGraph";
 import { BranchesView } from "./BranchesView";
 import { CommitDetailPanel } from "./CommitDetailPanel";
 import { CommitGraphCell } from "./CommitGraphCell";
@@ -21,7 +23,29 @@ import {
   PromptDialog,
   ResetDialog,
 } from "./GitDialogs";
+import { RebasePlanDialog } from "./RebasePlanDialog";
 import { RemotesDialog, RemotesView } from "./RemotesView";
+
+const DAY_MS = 86_400_000;
+const DATE_OPTIONS: { labelKey: "last24Hours" | "last7Days" | "last30Days" | "lastYear"; days: number }[] = [
+  { labelKey: "last24Hours", days: 1 },
+  { labelKey: "last7Days", days: 7 },
+  { labelKey: "last30Days", days: 30 },
+  { labelKey: "lastYear", days: 365 },
+];
+
+/** OpenIDEA `dateRangeLabel` for a custom after/before range. */
+function dateRangeLabel(after: number | null, before: number | null): string {
+  const day = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const lastDay = (ms: number) => day(new Date(ms).setDate(new Date(ms).getDate() - 1));
+  if (after != null && before != null) return `${day(after)} – ${lastDay(before)}`;
+  if (after != null) return `after ${day(after)}`;
+  if (before != null) return `until ${lastDay(before)}`;
+  return "";
+}
 
 const BRANCH_WIDTH_KEY = "git-gui.branchWidth";
 const BRANCH_WIDTH_MIN = 160;
@@ -51,12 +75,6 @@ function fuzzy(label: string, query: string): boolean {
 type DropdownItem =
   | { type: "option"; value: string | null; label: string; hint?: string; group?: string }
   | { type: "group"; id: string; label: string; count?: number };
-
-function shortUserLabel(raw: string): { primary: string; secondary?: string } {
-  const m = raw.match(/^(.*?)\s*<([^>]+)>\s*$/);
-  if (m) return { primary: m[1]!.trim() || m[2]!, secondary: m[2] };
-  return { primary: raw };
-}
 
 /** IDEA-style filter: searchable dropdown; groups can collapse. */
 function FilterDropdown(props: {
@@ -519,7 +537,7 @@ function BranchTreePanel() {
     }
     if (id === "compare") {
       const range = `${currentName}...${name}`;
-      setLogFilters({ logBranch: range, logPath: "", logAuthor: "", logGrep: "", logSinceDays: null });
+      setLogFilters({ logBranch: range, logPath: "", logAuthors: [], logGrep: "", logDate: null });
       void refresh();
       return;
     }
@@ -576,11 +594,11 @@ function BranchTreePanel() {
       } else if (id === "diff-worktree") {
         const patch = await api.diffWorkingTree(root, name === "HEAD" ? "HEAD" : name);
         if (!patch.trim()) {
-          alert(t(locale, "noDiffWorkingTree"));
+          await askAlert({ title: t(locale, "notice"), message: t(locale, "noDiffWorkingTree") });
           return;
         }
         await navigator.clipboard.writeText(patch);
-        alert(t(locale, "worktreeDiffCopied"));
+        await askAlert({ title: t(locale, "notice"), message: t(locale, "worktreeDiffCopied") });
       }
     });
   };
@@ -893,22 +911,66 @@ export function LogPanel() {
   const bottomTab = useApp((s) => s.bottomTab);
   const setBottomTab = useApp((s) => s.setBottomTab);
   const commits = useApp((s) => s.commits);
+  const commitsHasMore = useApp((s) => s.commitsHasMore);
+  const logLoadingMore = useApp((s) => s.logLoadingMore);
   const selected = useApp((s) => s.selectedCommit);
-  const logAuthor = useApp((s) => s.logAuthor);
+  const logAuthors = useApp((s) => s.logAuthors);
   const logGrep = useApp((s) => s.logGrep);
   const logPath = useApp((s) => s.logPath);
   const logBranch = useApp((s) => s.logBranch);
-  const logSinceDays = useApp((s) => s.logSinceDays);
+  const logDate = useApp((s) => s.logDate);
   const branches = useApp((s) => s.branches);
   const favorites = useApp((s) => s.favoriteBranches);
   const setLogFilters = useApp((s) => s.setLogFilters);
   const selectCommit = useApp((s) => s.selectCommit);
   const refresh = useApp((s) => s.refresh);
+  const loadMoreCommits = useApp((s) => s.loadMoreCommits);
   const run = useApp((s) => s.run);
   const { openMenu, menuNode } = useContextMenu();
   const [users, setUsers] = useState<string[]>([]);
   const [newFromCommit, setNewFromCommit] = useState<string | null>(null);
   const [resetDlg, setResetDlg] = useState<{ id: string; mode: ResetMode } | null>(null);
+  const [rebaseOnto, setRebaseOnto] = useState<Commit | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  // Remount virtualizer when filters change so scroll metrics reset cleanly.
+  const filterKey = `${logAuthors.join(",")}|${logGrep}|${logPath}|${logBranch ?? ""}|${logDate?.label ?? ""}`;
+
+  // OpenIDEA CommitList: virtualize; trailing slot while more pages exist.
+  const virtualizer = useVirtualizer({
+    count: commits.length + (commitsHasMore ? 1 : 0),
+    getScrollElement: () => tableRef.current,
+    estimateSize: () => ROW,
+    overscan: 8,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastVirtual = virtualItems[virtualItems.length - 1];
+
+  // Filters rebuild the list: jump back to top (stale scrollTop blocks wheel in WebView2).
+  useEffect(() => {
+    const el = tableRef.current;
+    if (el) el.scrollTop = 0;
+    virtualizer.scrollToOffset(0);
+  }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // OpenIDEA: prefetch when last visible index is within one PAGE of the end.
+  useEffect(() => {
+    if (!commitsHasMore || logLoadingMore || !lastVirtual || !commits.length) return;
+    if (lastVirtual.index >= Math.max(0, commits.length - LOG_PAGE_SIZE)) {
+      void loadMoreCommits();
+    }
+  }, [lastVirtual?.index, commits.length, commitsHasMore, logLoadingMore, loadMoreCommits]);
+
+  // First page shorter than the viewport: keep filling until scrollbar appears or done.
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el || !commitsHasMore || logLoadingMore || !commits.length) return;
+    // Only autofill when the scrollport has a real size (avoid contain/layout races).
+    if (el.clientHeight < 32) return;
+    if (el.scrollHeight <= el.clientHeight + 4) {
+      void loadMoreCommits();
+    }
+  }, [commits.length, commitsHasMore, logLoadingMore, loadMoreCommits, filterKey]);
 
   useEffect(() => {
     void api
@@ -921,15 +983,6 @@ export function LogPanel() {
     setLogFilters(partial);
     queueMicrotask(() => void useApp.getState().refresh());
   };
-
-  const dateLabel =
-    logSinceDays === 7
-      ? t(locale, "last7Days")
-      : logSinceDays === 30
-        ? t(locale, "last30Days")
-        : logSinceDays === 365
-          ? t(locale, "lastYear")
-          : null;
 
   const branchItems = useMemo<DropdownItem[]>(() => {
     const local = branches.filter((b) => !b.isRemote);
@@ -971,38 +1024,114 @@ export function LogPanel() {
     return items;
   }, [branches, favorites, locale]);
 
+  // OpenIDEA User menu: me, up to 30 authors (full `Name <email>`), Select….
   const userItems = useMemo<DropdownItem[]>(() => {
     const items: DropdownItem[] = [
-      { type: "option", value: null, label: t(locale, "clearFilter") },
+      { type: "option", value: ME, label: t(locale, "filterMe") },
     ];
-    for (const u of users) {
-      const { primary, secondary } = shortUserLabel(u);
-      items.push({
-        type: "option",
-        value: u,
-        label: primary,
-        hint: secondary,
-      });
+    const authors = [
+      ...new Set([
+        ...users,
+        ...commits.map((c) => (c.email ? `${c.author} <${c.email}>` : c.author)),
+      ]),
+    ]
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 30);
+    for (const u of authors) {
+      items.push({ type: "option", value: u, label: u });
     }
+    items.push({ type: "option", value: "__select_users__", label: t(locale, "selectEllipsis") });
     return items;
-  }, [users, locale]);
+  }, [users, commits, locale]);
 
+  // OpenIDEA DATE_OPTIONS + Select… (custom range).
   const dateItems = useMemo<DropdownItem[]>(
     () => [
-      { type: "option", value: null, label: t(locale, "clearFilter") },
-      { type: "option", value: "7", label: t(locale, "last7Days") },
-      { type: "option", value: "30", label: t(locale, "last30Days") },
-      { type: "option", value: "365", label: t(locale, "lastYear") },
+      ...DATE_OPTIONS.map((o) => ({
+        type: "option" as const,
+        value: String(o.days),
+        label: t(locale, o.labelKey),
+      })),
+      { type: "option", value: "__select_date__", label: t(locale, "selectEllipsis") },
     ],
     [locale],
   );
 
-  const graphRows = useMemo(() => buildCommitGraph(commits), [commits]);
-  const graphById = useMemo(() => {
-    const m = new Map<string, (typeof graphRows)[number]>();
-    for (const r of graphRows) m.set(r.id, r);
-    return m;
-  }, [graphRows]);
+  const onSelectUser = (v: string | null) => {
+    if (v === "__select_users__") {
+      const authors = [
+        ...new Set([
+          ME,
+          ...users,
+          ...commits.map((c) => (c.email ? `${c.author} <${c.email}>` : c.author)),
+        ]),
+      ]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      void chooseMany({
+        title: t(locale, "filterByUser"),
+        options: authors,
+        initial: logAuthors,
+        customLabel: t(locale, "otherNamesEmails"),
+      }).then((r) => {
+        if (r) applyFilters({ logAuthors: r });
+      });
+      return;
+    }
+    applyFilters({ logAuthors: v ? [v] : [] });
+  };
+
+  const onSelectDate = (v: string | null) => {
+    if (v === "__select_date__") {
+      void chooseDateRange().then((r) => {
+        if (!r) return;
+        if (r.after == null && r.before == null) {
+          applyFilters({ logDate: null });
+          return;
+        }
+        const date: LogDateFilter = {
+          after: r.after,
+          before: r.before,
+          label: dateRangeLabel(r.after, r.before),
+        };
+        applyFilters({ logDate: date });
+      });
+      return;
+    }
+    if (!v) {
+      applyFilters({ logDate: null });
+      return;
+    }
+    const days = Number(v);
+    const opt = DATE_OPTIONS.find((o) => o.days === days);
+    if (!opt) {
+      applyFilters({ logDate: null });
+      return;
+    }
+    applyFilters({
+      logDate: {
+        after: Date.now() - opt.days * DAY_MS,
+        before: null,
+        label: t(locale, opt.labelKey),
+      },
+    });
+  };
+
+  // OpenIDEA attaches every remote branch name to graphCommit for lane priority.
+  const remoteNames = useMemo(
+    () => branches.filter((b) => b.isRemote).map((b) => b.name),
+    [branches],
+  );
+  // OpenIDEA: presentLogGraph over the full loaded list (index-aligned with commits).
+  const graphRows = useMemo(
+    () => presentLogGraph(commits.map((c) => ({ ...c, remoteNames }))),
+    [commits, remoteNames],
+  );
+  const headId = useMemo(() => {
+    const withHead = commits.find((c) => c.refs.includes("HEAD"));
+    return withHead?.id ?? null;
+  }, [commits]);
 
   const commitMenu = (_commitId: string): MenuItem[] => [
     { id: "checkout", label: t(locale, "checkoutRevision") },
@@ -1010,6 +1139,7 @@ export function LogPanel() {
     { id: "sep1", label: "", separator: true },
     { id: "cherry", label: t(locale, "cherryPick") },
     { id: "revert", label: t(locale, "revertCommit") },
+    { id: "interactive-rebase", label: t(locale, "interactiveRebase") },
     { id: "sep2", label: "", separator: true },
     { id: "reset-soft", label: t(locale, "resetSoft") },
     { id: "reset-mixed", label: t(locale, "resetMixed") },
@@ -1021,6 +1151,11 @@ export function LogPanel() {
   const onCommitAction = (commitId: string, id: string) => {
     if (id === "branch") {
       setNewFromCommit(commitId);
+      return;
+    }
+    if (id === "interactive-rebase") {
+      const c = commits.find((x) => x.id === commitId);
+      if (c) setRebaseOnto(c);
       return;
     }
     if (id === "reset-soft") {
@@ -1124,24 +1259,29 @@ export function LogPanel() {
               />
               <FilterDropdown
                 label={t(locale, "filterAuthor")}
-                value={logAuthor || null}
-                displayValue={logAuthor ? shortUserLabel(logAuthor).primary : null}
+                value={logAuthors[0] ?? null}
+                displayValue={logAuthors.length ? logAuthors.join(", ") : null}
                 items={userItems}
                 searchable
                 searchPlaceholder={t(locale, "filterAuthor")}
-                onSelect={(v) => applyFilters({ logAuthor: v ?? "" })}
-                onClear={() => applyFilters({ logAuthor: "" })}
+                onSelect={onSelectUser}
+                onClear={() => applyFilters({ logAuthors: [] })}
               />
               <FilterDropdown
                 label={t(locale, "filterDate")}
-                value={logSinceDays != null ? String(logSinceDays) : null}
-                displayValue={dateLabel}
+                value={
+                  logDate
+                    ? (DATE_OPTIONS.find((o) => t(locale, o.labelKey) === logDate.label)?.days.toString() ??
+                      logDate.label)
+                    : null
+                }
+                displayValue={logDate?.label ?? null}
                 items={dateItems}
-                onSelect={(v) => applyFilters({ logSinceDays: v ? Number(v) : null })}
-                onClear={() => applyFilters({ logSinceDays: null })}
+                onSelect={onSelectDate}
+                onClear={() => applyFilters({ logDate: null })}
               />
               <div className="title-spacer" />
-              {(logPath || logBranch || logAuthor || logSinceDays != null || logGrep) && (
+              {(logPath || logBranch || logAuthors.length > 0 || logDate || logGrep) && (
                 <button
                   className="ghost"
                   title={t(locale, "clearFilter")}
@@ -1149,8 +1289,8 @@ export function LogPanel() {
                     applyFilters({
                       logPath: "",
                       logBranch: null,
-                      logAuthor: "",
-                      logSinceDays: null,
+                      logAuthors: [],
+                      logDate: null,
                       logGrep: "",
                     })
                   }
@@ -1163,34 +1303,68 @@ export function LogPanel() {
               </button>
             </div>
             <div className={`log-split ${selected ? "with-detail" : ""}`}>
-              <div className="commit-table">
-                {commits.map((c) => {
-                  const g = graphById.get(c.id);
-                  return (
-                    <div
-                      key={c.id}
-                      className={`commit-row ${selected?.id === c.id ? "selected" : ""}`}
-                      onClick={() => void selectCommit(c)}
-                      onContextMenu={(e) =>
-                        openMenu(e, commitMenu(c.id), (id) => onCommitAction(c.id, id))
+              <div className="commit-table" ref={tableRef}>
+                {!commits.length ? (
+                  <div className="empty-hint">No commits</div>
+                ) : (
+                  <div
+                    className="commit-table-inner"
+                    style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+                  >
+                    {virtualItems.map((item) => {
+                      if (item.index >= commits.length) {
+                        return (
+                          <div
+                            key={`load-more-${filterKey}`}
+                            className="commit-row load-more-row"
+                            style={{ top: item.start, height: item.size }}
+                          >
+                            {logLoadingMore ? t(locale, "loadingMore") : t(locale, "loading")}
+                          </div>
+                        );
                       }
-                    >
-                      <span className="graph-cell">
-                        {g ? <CommitGraphCell row={g} /> : null}
-                      </span>
-                      <span className="hash">{c.shortId}</span>
-                      <span className="summary" title={c.summary}>
-                        {c.summary}
-                        {c.refs.length ? (
-                          <span className="refs"> {c.refs.slice(0, 3).join(" ")}</span>
-                        ) : null}
-                      </span>
-                      <span className="meta">{c.author}</span>
-                      <span className="meta">{new Date(c.time * 1000).toLocaleString()}</span>
-                    </div>
-                  );
-                })}
-                {!commits.length && <div className="empty-hint">No commits</div>}
+                      const c = commits[item.index]!;
+                      const g = graphRows[item.index];
+                      const isHead = c.id === headId;
+                      const isMerge = c.parents.length > 1;
+                      return (
+                        <div
+                          key={c.id}
+                          className={`commit-row ${selected?.id === c.id ? "selected" : ""}`}
+                          style={{ top: item.start, height: item.size }}
+                          onClick={() => void selectCommit(c)}
+                          onContextMenu={(e) =>
+                            openMenu(e, commitMenu(c.id), (id) => onCommitAction(c.id, id))
+                          }
+                        >
+                          <span className="col-subject">
+                            {g ? <CommitGraphCell row={g} head={isHead} height={item.size} /> : null}
+                            <span className="commit-text">
+                              <span
+                                className={`summary${isMerge ? " merge" : ""}`}
+                                title={c.summary}
+                              >
+                                {c.summary}
+                              </span>
+                              {c.refs.length ? (
+                                <span className="refs" title={c.refs.join(", ")}>
+                                  {c.refs.slice(0, 3).join(" ")}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                          <span className="col-author" title={c.author}>
+                            {c.author}
+                          </span>
+                          <span className="col-date">
+                            {c.time > 0 ? new Date(c.time * 1000).toLocaleString() : "—"}
+                          </span>
+                          <span className="col-hash">{c.shortId}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <CommitDetailPanel />
             </div>
@@ -1221,6 +1395,9 @@ export function LogPanel() {
           void run(() => api.reset(root, r.id, r.mode));
         }}
       />
+      {rebaseOnto && (
+        <RebasePlanDialog onto={rebaseOnto} onClose={() => setRebaseOnto(null)} />
+      )}
     </div>
   );
 }

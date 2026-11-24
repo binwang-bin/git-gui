@@ -1,13 +1,16 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { api } from "../api";
+import { conflictPaths } from "../conflict";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
+import { askAlert, askConfirm } from "../uiDialogs";
 import { openRepoInNewWindow } from "../windowing";
 import { CommitToolWindow } from "./CommitToolWindow";
 import { DiffView } from "./DiffView";
 import { LogPanel } from "./LogView";
 import { ProjectTree } from "./ProjectTree";
+import { MergeEditor } from "./MergeEditor";
 import { SyncDialogs } from "./SyncDialogs";
 
 const LOG_HEIGHT_KEY = "git-gui.logHeight";
@@ -27,6 +30,7 @@ export function Workbench() {
   const setCommitTab = useApp((s) => s.setCommitTab);
   const setBottomTab = useApp((s) => s.setBottomTab);
   const branch = useApp((s) => s.branch);
+  const status = useApp((s) => s.status);
   const busy = useApp((s) => s.busy);
   const error = useApp((s) => s.error);
   const refresh = useApp((s) => s.refresh);
@@ -37,6 +41,8 @@ export function Workbench() {
   const setLocale = useApp((s) => s.setLocale);
   const syncDialog = useApp((s) => s.syncDialog);
   const setSyncDialog = useApp((s) => s.setSyncDialog);
+  const mergePath = useApp((s) => s.mergePath);
+  const setMergePath = useApp((s) => s.setMergePath);
   const name = root.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? root;
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [logHeight, setLogHeight] = useState(loadLogHeight);
@@ -176,7 +182,43 @@ export function Workbench() {
       {branch?.operation && (
         <div className="op-banner">
           <span>{tf(locale, "operationInProgress", { op: branch.operation })}</span>
-          <button className="secondary" onClick={() => void run(() => api.continueOp(root))}>
+          {status.some((f) => f.unstaged === "conflicted" || f.staged === "conflicted") && (
+            <button
+              className="secondary"
+              onClick={() => {
+                const first = status.find(
+                  (f) => f.unstaged === "conflicted" || f.staged === "conflicted",
+                );
+                if (first) setMergePath(first.relPath);
+              }}
+            >
+              {t(locale, "resolveInMergeEditor")}
+            </button>
+          )}
+          <button
+            className="secondary"
+            onClick={() => {
+              void (async () => {
+                const left = conflictPaths(useApp.getState().status);
+                if (left.length) {
+                  const first = left[0]!;
+                  setMergePath(first);
+                  await askAlert({
+                    title: t(locale, "continue"),
+                    message: tf(locale, "continueBlockedConflicts", { n: left.length, file: first }),
+                  });
+                  return;
+                }
+                const ok = await askConfirm({
+                  title: t(locale, "continue"),
+                  message: tf(locale, "continueConfirm", { op: branch.operation ?? "" }),
+                  danger: false,
+                });
+                if (!ok) return;
+                await run(() => api.continueOp(root));
+              })();
+            }}
+          >
             {t(locale, "continue")}
           </button>
           <button className="danger-text" onClick={() => void run(() => api.abortOp(root))}>
@@ -245,6 +287,7 @@ export function Workbench() {
 
       {busy && <div className="busy-toast">{t(locale, "loading")}</div>}
       <SyncDialogs kind={syncDialog} onClose={() => setSyncDialog(null)} />
+      {mergePath && <MergeEditor path={mergePath} onClose={() => setMergePath(null)} />}
     </div>
   );
 }

@@ -8,9 +8,13 @@ import type {
   FileDiff,
   FileStatus,
   GitVersion,
+  LogPage,
   LogQuery,
+  MergeVersions,
   Remote,
   ResetMode,
+  RebaseEntry,
+  ShelfEntry,
   Stash,
 } from "./types";
 
@@ -22,9 +26,11 @@ export const api = {
   status: (root: string) => invoke<FileStatus[]>("repo_status", { root }),
   branchInfo: (root: string) => invoke<BranchInfo>("repo_branch_info", { root }),
   branches: (root: string) => invoke<Branch[]>("repo_branches", { root }),
-  log: (root: string, query: LogQuery) => invoke<Commit[]>("repo_log", { root, query }),
+  log: (root: string, query: LogQuery) => invoke<LogPage>("repo_log", { root, query }),
   commitFiles: (root: string, commit: string) =>
     invoke<ChangedFile[]>("repo_commit_files", { root, commit }),
+  commitMessage: (root: string, commit: string) =>
+    invoke<[string, string]>("repo_commit_message", { root, commit }),
   fileDiff: (root: string, path: string, staged: boolean) =>
     invoke<FileDiff>("repo_file_diff", { root, path, staged }),
   commitFileDiff: (root: string, commit: string, path: string) =>
@@ -96,10 +102,16 @@ export const api = {
     invoke<void>("repo_apply_patch", { root, patch, cached, reverse }),
   conflictResolve: (root: string, paths: string[], side: "ours" | "theirs") =>
     invoke<void>("repo_conflict_resolve", { root, paths, side }),
+  conflictVersions: (root: string, path: string) =>
+    invoke<MergeVersions>("repo_conflict_versions", { root, path }),
+  writeAndStage: (root: string, path: string, contents: string) =>
+    invoke<void>("repo_write_and_stage", { root, path, contents }),
   blame: (root: string, path: string) => invoke<BlameLine[]>("repo_blame", { root, path }),
   outgoing: (root: string) => invoke<Commit[]>("repo_outgoing", { root }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   logUsers: (root: string) => invoke<string[]>("repo_log_users", { root }),
+  configGet: (root: string, key: string) =>
+    invoke<string | null>("repo_config_get", { root, key }),
   listDir: (root: string, path: string) =>
     invoke<import("./types").DirEntry[]>("repo_list_dir", { root, path }),
   stashDiff: (root: string, index: number) =>
@@ -108,6 +120,14 @@ export const api = {
     invoke<ChangedFile[]>("repo_stash_files", { root, index }),
   stashFileDiff: (root: string, index: number, path: string) =>
     invoke<FileDiff>("repo_stash_file_diff", { root, index, path }),
+  shelves: (root: string) => invoke<ShelfEntry[]>("repo_shelves", { root }),
+  shelve: (root: string, name: string, paths: string[]) =>
+    invoke<ShelfEntry>("repo_shelve", { root, name, paths }),
+  unshelve: (root: string, id: string, dropAfter: boolean) =>
+    invoke<void>("repo_unshelve", { root, id, dropAfter }),
+  dropShelf: (root: string, id: string) => invoke<void>("repo_drop_shelf", { root, id }),
+  interactiveRebase: (root: string, base: string, entries: RebaseEntry[]) =>
+    invoke<string>("repo_interactive_rebase", { root, base, entries }),
   watchRepo: (root: string) => invoke<void>("watch_repo", { root }),
   unwatchRepo: () => invoke<void>("unwatch_repo"),
 };

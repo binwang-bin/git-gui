@@ -43,6 +43,10 @@ export interface Commit {
   time: number;
   parents: string[];
   refs: string[];
+  /** OpenIDEA: nearest visible ancestors for the graph under filters. */
+  graphParents?: string[] | null;
+  /** Per graph parent: dashed when the link skipped hidden commits. */
+  graphDashed?: boolean[];
 }
 
 export interface ChangedFile {
@@ -108,18 +112,72 @@ export interface GitVersion {
 export interface LogQuery {
   limit: number;
   skip: number;
+  /** Legacy single author; prefer `authors`. */
   author?: string | null;
+  /** OpenIDEA User filter — any entry matches when `authorsExact`. */
+  authors?: string[];
+  authorsExact?: boolean;
   grep?: string | null;
   path?: string | null;
   branch?: string | null;
+  /** Legacy unix seconds; prefer `sinceMs`. */
   since?: number | null;
+  /** Committer time, inclusive (epoch ms). */
+  sinceMs?: number | null;
+  /** Committer time, exclusive (epoch ms). */
+  untilMs?: number | null;
+}
+
+/** One page of log results with an opaque git-stream cursor. */
+export interface LogPage {
+  commits: Commit[];
+  nextSkip: number;
+  hasMore: boolean;
+}
+
+/** OpenIDEA date filter (committer time, epoch ms). */
+export interface LogDateFilter {
+  after: number | null;
+  before: number | null;
+  label: string;
 }
 
 export type ResetMode = "soft" | "mixed" | "hard";
+
+export interface ShelfEntry {
+  id: string;
+  name: string;
+  time: number;
+  paths: string[];
+}
+
+export type RebaseAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop";
+
+export interface RebaseEntry {
+  commit: string;
+  action: RebaseAction;
+  message?: string | null;
+}
+
+export interface MergeSides {
+  operation?: string | null;
+  reversed?: boolean;
+  branch?: string | null;
+  commit?: string | null;
+  otherBranch?: string | null;
+}
+
+export interface MergeVersions {
+  binary: boolean;
+  base: string | null;
+  ours: string | null;
+  theirs: string | null;
+  sides: MergeSides;
+}
 /** Left activity tool window. */
 export type LeftTool = "project" | "commit";
 /** Tabs inside the Commit tool window (IDEA-style). */
-export type CommitTab = "changes" | "stash";
+export type CommitTab = "changes" | "stash" | "shelf";
 /** Bottom Git tool window tabs. */
 export type BottomTab = "log" | "branches" | "remotes";
 export type Locale = "en" | "zh";

@@ -1,8 +1,20 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { api } from "../api";
+import {
+  DEFAULT_LIST_ID,
+  addList,
+  editList,
+  listOf,
+  moveFiles,
+  removeList,
+  setActiveList,
+  useChangelists,
+  validateListName,
+} from "../changelists";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
 import type { ChangeKind, FileStatus } from "../types";
+import { askAlert, askConfirm, askPrompt } from "../uiDialogs";
 import { useContextMenu, type MenuItem } from "./ContextMenu";
 import { DiffView } from "./DiffView";
 
@@ -16,7 +28,7 @@ function fileNameOf(rel: string): string {
   return i < 0 ? norm : norm.slice(i + 1);
 }
 
-type ChangeGroupId = "conflicts" | "changes" | "unversioned";
+type ChangeGroupId = "conflicts" | "changes" | "unversioned" | `cl:${string}`;
 
 function statusLetter(kind: ChangeKind | null): string {
   switch (kind) {
@@ -147,10 +159,12 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
   const setLogFilters = useApp((s) => s.setLogFilters);
   const setBottomTab = useApp((s) => s.setBottomTab);
   const setCommitTab = useApp((s) => s.setCommitTab);
+  const clState = useChangelists((s) => s.state);
+  const updateCl = useChangelists((s) => s.update);
   const { openMenu, menuNode } = useContextMenu();
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
-  const [openGroups, setOpenGroups] = useState<Record<ChangeGroupId, boolean>>({
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     conflicts: true,
     changes: true,
     unversioned: false,
@@ -171,8 +185,14 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
     conflicts.sort(sort);
     changes.sort(sort);
     unversioned.sort(sort);
-    return { conflicts, changes, unversioned };
-  }, [status]);
+    const byList = new Map<string, FileStatus[]>();
+    for (const list of clState.lists) byList.set(list.id, []);
+    for (const f of changes) {
+      const id = listOf(clState, f.relPath);
+      (byList.get(id) ?? byList.get(clState.active)!).push(f);
+    }
+    return { conflicts, changes, unversioned, byList };
+  }, [status, clState]);
 
   const allPaths = status.map((f) => f.relPath);
   const checkedList = allPaths.filter((p) => checked[p]);
@@ -248,6 +268,7 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
 
     const conflictItems: MenuItem[] = isConflict
       ? [
+          { id: "merge-editor", label: t(locale, "resolveInMergeEditor") },
           { id: "accept-ours", label: t(locale, "acceptOurs") },
           { id: "accept-theirs", label: t(locale, "acceptTheirs") },
           { id: "sep-conflict", label: "", separator: true },
@@ -293,9 +314,18 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         disabled: !canUnstage,
       },
       { id: "sep3", label: "", separator: true },
+      { id: "shelve", label: t(locale, "shelveChanges") },
       { id: "stash-selected", label: t(locale, "stashSelected") },
       { id: "create-patch", label: t(locale, "createPatch") },
       { id: "copy-patch", label: t(locale, "copyPatch") },
+      {
+        id: "move-cl",
+        label: t(locale, "moveToChangelist"),
+        submenu: clState.lists.map((l) => ({
+          id: `move-cl:${l.id}`,
+          label: l.id === clState.active ? `${l.name} ●` : l.name,
+        })),
+      },
       { id: "sep4", label: "", separator: true },
       { id: "show-history", label: t(locale, "showHistory") },
       {
@@ -336,10 +366,10 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
       // File history: path filter only (clear other log filters for a clean view).
       setLogFilters({
         logPath: path,
-        logAuthor: "",
+        logAuthors: [],
         logGrep: "",
         logBranch: null,
-        logSinceDays: null,
+        logDate: null,
       });
       setBottomTab("log");
       void refresh();
@@ -362,15 +392,27 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         return;
       }
       if (id === "rollback") {
-        const ok = confirm(tf(locale, "rollbackSelected", { paths: paths.join("\n") }));
+        const ok = await askConfirm({
+          title: t(locale, "rollback"),
+          message: tf(locale, "rollbackSelected", { paths: paths.join("\n") }),
+          danger: true,
+        });
         if (!ok) return;
         await api.discard(root, paths);
         return;
       }
       if (id === "delete") {
-        const ok = confirm(tf(locale, "deleteSelected", { paths: paths.join("\n") }));
+        const ok = await askConfirm({
+          title: t(locale, "delete"),
+          message: tf(locale, "deleteSelected", { paths: paths.join("\n") }),
+          danger: true,
+        });
         if (!ok) return;
         await api.deletePaths(root, paths);
+        return;
+      }
+      if (id === "merge-editor") {
+        useApp.getState().setMergePath(path);
         return;
       }
       if (id === "accept-ours" || id === "accept-theirs") {
@@ -382,10 +424,27 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         setCheckedAll(paths, true);
       }
       else if (id === "unstage") await api.unstage(root, paths);
-      else if (id === "stash-selected" || id === "shelve") {
-        const msg =
-          prompt(t(locale, id === "shelve" ? "shelveMessage" : "stashMessage")) ?? undefined;
-        await api.stashPush(root, msg || null, paths);
+      else if (id.startsWith("move-cl:")) {
+        const listId = id.slice("move-cl:".length);
+        updateCl((s) => moveFiles(s, paths, listId));
+        return;
+      } else if (id === "shelve") {
+        const msg = await askPrompt({
+          title: t(locale, "shelveChanges"),
+          label: t(locale, "shelveMessage"),
+          allowEmpty: true,
+        });
+        if (msg == null) return;
+        await api.shelve(root, msg.trim(), paths);
+        setCommitTab("shelf");
+      } else if (id === "stash-selected") {
+        const msg = await askPrompt({
+          title: t(locale, "stashSelected"),
+          label: t(locale, "stashMessage"),
+          allowEmpty: true,
+        });
+        if (msg == null) return;
+        await api.stashPush(root, msg.trim() || null, paths);
         setCommitTab("stash");
       } else if (id === "create-patch" || id === "copy-patch") {
         const stagedPatch = await api.diffPatch(root, paths, true);
@@ -395,14 +454,14 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
           useApp.setState({ error: t(locale, "nothingToExport") });
           return;
         }
-        if (id === "copy-patch") {
-          await navigator.clipboard.writeText(patch);
-        } else {
+        await navigator.clipboard.writeText(patch);
+        useApp.setState({ error: null });
+        if (id === "create-patch") {
           const name = fileNameOf(path).replace(/\.[^.]+$/, "") + ".patch";
-          await navigator.clipboard.writeText(patch);
-          useApp.setState({ error: null });
-          // Desktop save dialog would be ideal; clipboard + notice via prompt filename.
-          prompt(t(locale, "patchCopied"), name);
+          await askAlert({
+            title: t(locale, "notice"),
+            message: `${t(locale, "patchCopied")}\n${name}`,
+          });
         }
       } else if (id === "blame") {
         const lines = await api.blame(root, path);
@@ -419,11 +478,12 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
   }
 
   /** OpenIDEA listMenu — right-click on Changes / Unversioned / Conflicts group header. */
-  const groupMenu = (id: ChangeGroupId, files: FileStatus[]): MenuItem[] => {
+  const groupMenu = (id: ChangeGroupId, files: FileStatus[], listId?: string): MenuItem[] => {
     const paths = files.map((f) => f.relPath);
     const canStage = files.some((f) => f.unstaged);
     const canUnstage = files.some((f) => f.staged);
     const isUnversioned = id === "unversioned";
+    const isCl = id.startsWith("cl:") || id === "changes";
     return [
       {
         id: "g-commit",
@@ -431,13 +491,23 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
         disabled: !files.length || isUnversioned,
       },
       { id: "g-sep1", label: "", separator: true },
-      // Changelists are not implemented yet — keep items for IDEA parity.
-      { id: "g-new-cl", label: t(locale, "newChangelist"), disabled: true },
+      { id: "g-new-cl", label: t(locale, "newChangelist") },
       {
         id: "g-edit-cl",
         label: t(locale, "editChangelist"),
         shortcut: "F2",
-        disabled: true,
+        disabled: !listId || listId === DEFAULT_LIST_ID,
+      },
+      {
+        id: "g-set-active",
+        label: t(locale, "setActiveChangelist"),
+        disabled: !listId || listId === clState.active,
+      },
+      {
+        id: "g-remove-cl",
+        label: t(locale, "removeChangelist"),
+        disabled: !listId || listId === DEFAULT_LIST_ID || listId === clState.active,
+        danger: true,
       },
       { id: "g-sep2", label: "", separator: true },
       {
@@ -470,7 +540,7 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
       {
         id: "g-shelve",
         label: t(locale, "shelveChanges"),
-        disabled: !paths.length,
+        disabled: !paths.length || (!isCl && id === "conflicts"),
       },
       {
         id: "g-patch",
@@ -480,7 +550,12 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
     ];
   };
 
-  const onGroupAction = (_groupId: ChangeGroupId, files: FileStatus[], action: string) => {
+  const onGroupAction = (
+    _groupId: ChangeGroupId,
+    files: FileStatus[],
+    action: string,
+    listId?: string,
+  ) => {
     const paths = files.map((f) => f.relPath);
     if (action === "g-commit") {
       setCheckedAll(allPaths, false);
@@ -492,9 +567,56 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
       });
       return;
     }
+    if (action === "g-new-cl") {
+      void (async () => {
+        const name = await askPrompt({
+          title: t(locale, "newChangelist"),
+          label: t(locale, "changelistName"),
+        });
+        if (name == null) return;
+        const err = validateListName(clState, name);
+        if (err) {
+          await askAlert({ title: t(locale, "newChangelist"), message: err });
+          return;
+        }
+        updateCl((s) => addList(s, name, { makeActive: true }).state);
+      })();
+      return;
+    }
+    if (action === "g-edit-cl" && listId) {
+      const list = clState.lists.find((l) => l.id === listId);
+      if (!list) return;
+      void (async () => {
+        const name = await askPrompt({
+          title: t(locale, "editChangelist"),
+          label: t(locale, "changelistName"),
+          initial: list.name,
+        });
+        if (name == null) return;
+        const err = validateListName(clState, name, listId);
+        if (err) {
+          await askAlert({ title: t(locale, "editChangelist"), message: err });
+          return;
+        }
+        updateCl((s) => editList(s, listId, name, list.comment));
+      })();
+      return;
+    }
+    if (action === "g-set-active" && listId) {
+      updateCl((s) => setActiveList(s, listId));
+      return;
+    }
+    if (action === "g-remove-cl" && listId) {
+      updateCl((s) => removeList(s, listId));
+      return;
+    }
     void run(async () => {
       if (action === "g-rollback") {
-        const ok = confirm(tf(locale, "rollbackGroup", { count: paths.length }));
+        const ok = await askConfirm({
+          title: t(locale, "rollback"),
+          message: tf(locale, "rollbackGroup", { count: paths.length }),
+          danger: true,
+        });
         if (!ok) return;
         await api.discard(root, paths);
       } else if (action === "g-stage" || action === "g-add-vcs") {
@@ -506,9 +628,14 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
           files.filter((f) => f.staged).map((f) => f.relPath),
         );
       } else if (action === "g-shelve") {
-        const msg = prompt(t(locale, "shelveMessage")) ?? undefined;
-        await api.stashPush(root, msg || null, paths);
-        setCommitTab("stash");
+        const msg = await askPrompt({
+          title: t(locale, "shelveChanges"),
+          label: t(locale, "shelveMessage"),
+          allowEmpty: true,
+        });
+        if (msg == null) return;
+        await api.shelve(root, msg.trim(), paths);
+        setCommitTab("shelf");
       } else if (action === "g-patch") {
         const stagedPatch = await api.diffPatch(root, paths, true);
         const unstagedPatch = await api.diffPatch(root, paths, false);
@@ -518,7 +645,10 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
           return;
         }
         await navigator.clipboard.writeText(patch);
-        prompt(t(locale, "patchCopied"), "changes.patch");
+        await askAlert({
+          title: t(locale, "notice"),
+          message: `${t(locale, "patchCopied")}\nchanges.patch`,
+        });
       }
     });
   };
@@ -548,9 +678,11 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
     id: ChangeGroupId,
     label: string,
     files: FileStatus[],
+    listId?: string,
   ) => {
-    if (!files.length) return null;
-    const open = openGroups[id];
+    if (!files.length && id !== "changes") return null;
+    if (!files.length && clState.lists.length > 1) return null;
+    const open = openGroups[id] ?? true;
     return (
       <div className="change-group" key={id}>
         <GroupHeader
@@ -558,10 +690,12 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
           count={files.length}
           open={open}
           check={groupCheck(files)}
-          onToggleOpen={() => setOpenGroups((s) => ({ ...s, [id]: !s[id] }))}
+          onToggleOpen={() => setOpenGroups((s) => ({ ...s, [id]: !open }))}
           onToggleCheck={() => toggleGroupCheck(files)}
           onMenu={(e) =>
-            openMenu(e, groupMenu(id, files), (action) => onGroupAction(id, files, action))
+            openMenu(e, groupMenu(id, files, listId), (action) =>
+              onGroupAction(id, files, action, listId),
+            )
           }
         />
         {open &&
@@ -627,8 +761,15 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
           className="danger-text ghost"
           disabled={!checkedList.length}
           onClick={() => {
-            if (!confirm(t(locale, "discardSelectedConfirm"))) return;
-            void run(() => api.discard(root, checkedList));
+            void (async () => {
+              const ok = await askConfirm({
+                title: t(locale, "discard"),
+                message: t(locale, "discardSelectedConfirm"),
+                danger: true,
+              });
+              if (!ok) return;
+              void run(() => api.discard(root, checkedList));
+            })();
           }}
         >
           {t(locale, "discard")}
@@ -637,7 +778,16 @@ export function ChangesView({ embedded = false }: { embedded?: boolean }) {
 
       <div className="file-tree">
         {renderGroup("conflicts", t(locale, "mergeConflicts"), groups.conflicts)}
-        {renderGroup("changes", t(locale, "changes"), groups.changes)}
+        {clState.lists.length <= 1
+          ? renderGroup("changes", t(locale, "changes"), groups.changes, DEFAULT_LIST_ID)
+          : clState.lists.map((list) => {
+              const files = groups.byList.get(list.id) ?? [];
+              const label =
+                list.id === clState.active
+                  ? `${list.name} ●`
+                  : list.name;
+              return renderGroup(`cl:${list.id}`, label, files, list.id);
+            })}
         {renderGroup("unversioned", t(locale, "unversionedFiles"), groups.unversioned)}
         {!status.length && <div className="empty-hint">{t(locale, "noLocalChanges")}</div>}
       </div>

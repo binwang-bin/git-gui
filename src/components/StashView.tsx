@@ -3,6 +3,7 @@ import { api } from "../api";
 import { t, tf } from "../i18n";
 import { useApp } from "../store";
 import type { ChangedFile, ChangeKind } from "../types";
+import { askConfirm, askPrompt } from "../uiDialogs";
 import { useContextMenu, type MenuItem } from "./ContextMenu";
 
 function cleanMessage(msg: string): string {
@@ -104,7 +105,12 @@ export function StashView() {
       if (id === "apply") await api.stashApply(root, index, false);
       if (id === "pop") await api.stashApply(root, index, true);
       if (id === "drop") {
-        if (!confirm(tf(locale, "dropStashConfirm", { index }))) return;
+        const ok = await askConfirm({
+          title: t(locale, "dropStash"),
+          message: tf(locale, "dropStashConfirm", { index }),
+          danger: true,
+        });
+        if (!ok) return;
         await api.stashDrop(root, index);
       }
     });
@@ -141,8 +147,15 @@ export function StashView() {
         <button
           className="primary"
           onClick={() => {
-            const message = prompt(t(locale, "stashPush")) ?? undefined;
-            void run(() => api.stashPush(root, message || null));
+            void (async () => {
+              const message = await askPrompt({
+                title: t(locale, "stashPush"),
+                label: t(locale, "stashMessage"),
+                allowEmpty: true,
+              });
+              if (message == null) return;
+              void run(() => api.stashPush(root, message.trim() || null));
+            })();
           }}
         >
           {t(locale, "stashPush")}
@@ -152,8 +165,15 @@ export function StashView() {
           className="danger-text ghost"
           disabled={!stashes.length}
           onClick={() => {
-            if (!confirm(t(locale, "clearAllStashes"))) return;
-            void run(() => api.stashClear(root));
+            void (async () => {
+              const ok = await askConfirm({
+                title: t(locale, "clear"),
+                message: t(locale, "clearAllStashes"),
+                danger: true,
+              });
+              if (!ok) return;
+              void run(() => api.stashClear(root));
+            })();
           }}
         >
           {t(locale, "clear")}

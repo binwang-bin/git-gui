@@ -134,6 +134,12 @@ export function DiffView() {
         <div className="conflict-banner">
           <span>{t(locale, "conflictBanner")}</span>
           <button
+            className="primary"
+            onClick={() => useApp.getState().setMergePath(path)}
+          >
+            {t(locale, "resolveInMergeEditor")}
+          </button>
+          <button
             className="secondary"
             onClick={() =>
               void run(async () => {

@@ -1,67 +1,73 @@
-import { graphColor, type GraphRow, type GraphSegment } from "../gitGraph";
+/**
+ * OpenIDEA `log/GraphCell.tsx` (non-interactive paint path).
+ * Lane geometry and stroke style must stay identical to OpenIDEA.
+ */
+import { LANE, ROW, laneColor, type GraphRow, type GraphSegment } from "../gitGraph";
 
-const LANE = 14;
-const ROW_H = 24;
-const R = 3.5;
-const PAD = 6;
-
-function pathFor(seg: GraphSegment, half: "up" | "down"): string {
-  const midY = ROW_H / 2;
-  if (half === "up") {
-    const x0 = PAD + seg.from * LANE + LANE / 2;
-    const x1 = PAD + seg.to * LANE + LANE / 2;
-    if (seg.from === seg.to) {
-      return `M ${x0} 0 L ${x1} ${midY}`;
-    }
-    // Curve into the node
-    const cy = midY * 0.35;
-    return `M ${x0} 0 L ${x0} ${cy} Q ${x0} ${midY} ${x1} ${midY}`;
-  }
-  const x0 = PAD + seg.from * LANE + LANE / 2;
-  const x1 = PAD + seg.to * LANE + LANE / 2;
-  if (seg.from === seg.to) {
-    return `M ${x0} ${midY} L ${x1} ${ROW_H}`;
-  }
-  const cy = midY + (ROW_H - midY) * 0.65;
-  return `M ${x0} ${midY} Q ${x0} ${cy} ${x1} ${cy} L ${x1} ${ROW_H}`;
+export function x(lane: number) {
+  return LANE / 2 + lane * LANE;
 }
 
-export function CommitGraphCell(props: { row: GraphRow }) {
-  const { row } = props;
-  const w = PAD * 2 + Math.max(row.width, 1) * LANE;
-  const cx = PAD + row.lane * LANE + LANE / 2;
-  const cy = ROW_H / 2;
-  const nodeColor = graphColor(row.color);
+/** Straight, also across lanes (IDEA's diagonal edges). */
+function seg(fromX: number, fromY: number, toX: number, toY: number) {
+  return `M${fromX} ${fromY}L${toX} ${toY}`;
+}
 
+/** Arrow head at (`px`, `py`) pointing up (`dir` -1) or down (1): a long edge continues. */
+function arrowHead(px: number, py: number, dir: 1 | -1) {
+  const back = py - dir * 4;
+  return `M${px - 3} ${back}L${px} ${py}L${px + 3} ${back}`;
+}
+
+export function CommitGraphCell(props: {
+  row: GraphRow;
+  head?: boolean;
+  height?: number;
+}) {
+  const { row, head } = props;
+  const height = props.height ?? ROW;
+  const cy = height / 2;
+  const width = Math.max(row.width, 1) * LANE;
+  const draw = (s: GraphSegment, i: number, up: boolean) => {
+    const fromX = x(s.fromX ?? s.from);
+    const toX = x(s.toX ?? s.to);
+    const path =
+      seg(fromX, up ? 0 : cy, toX, up ? cy : height) +
+      (s.arrow ? arrowHead(up ? fromX : toX, up ? 0 : height, up ? -1 : 1) : "");
+    return (
+      <path
+        key={`${up ? "u" : "d"}${i}`}
+        d={path}
+        stroke={laneColor(s.color)}
+        strokeWidth={1.4}
+        pointerEvents="none"
+        strokeLinecap={s.dashed ? "butt" : "square"}
+        strokeDasharray={s.dashed ? "2 2" : undefined}
+      />
+    );
+  };
   return (
-    <svg
-      className="commit-graph"
-      width={w}
-      height={ROW_H}
-      viewBox={`0 0 ${w} ${ROW_H}`}
-      aria-hidden
-    >
-      {row.up.map((s, i) => (
-        <path
-          key={`u-${i}`}
-          d={pathFor(s, "up")}
-          fill="none"
-          stroke={graphColor(s.color)}
-          strokeWidth={1.6}
-          strokeLinecap="round"
+    <svg className="commit-graph" width={width} height={height} aria-hidden>
+      {row.up.map((s, i) => draw(s, i, true))}
+      {row.down.map((s, i) => draw(s, i, false))}
+      <circle
+        cx={x(row.lane)}
+        cy={cy}
+        r={head ? 5 : 3.8}
+        fill={head ? "var(--bg-app)" : laneColor(row.color)}
+        stroke={laneColor(row.color)}
+        strokeWidth={head ? 1.5 : 0}
+        pointerEvents="none"
+      />
+      {head && (
+        <circle
+          cx={x(row.lane)}
+          cy={cy}
+          r={2.5}
+          fill={laneColor(row.color)}
+          pointerEvents="none"
         />
-      ))}
-      {row.down.map((s, i) => (
-        <path
-          key={`d-${i}`}
-          d={pathFor(s, "down")}
-          fill="none"
-          stroke={graphColor(s.color)}
-          strokeWidth={1.6}
-          strokeLinecap="round"
-        />
-      ))}
-      <circle cx={cx} cy={cy} r={R} fill={nodeColor} stroke={nodeColor} strokeWidth={1} />
+      )}
     </svg>
   );
 }

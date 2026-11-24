@@ -29,6 +29,16 @@ pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput> {
 }
 
 pub fn run_stdin(cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GitOutput> {
+    run_stdin_env(cwd, args, stdin, &[])
+}
+
+/// Like `run_stdin`, with extra environment variables (e.g. `GIT_SEQUENCE_EDITOR`).
+pub fn run_stdin_env(
+    cwd: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+    envs: &[(&str, &str)],
+) -> Result<GitOutput> {
     let git = git_executable()?;
     let mut cmd = Command::new(&git);
     cmd.args(args)
@@ -43,6 +53,9 @@ pub fn run_stdin(cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GitOu
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
 
     // Hide the console window that Windows otherwise flashes for child processes.
     #[cfg(windows)]
@@ -75,6 +88,10 @@ pub fn run_stdin(cwd: &Path, args: &[&str], stdin: Option<&str>) -> Result<GitOu
         }));
     }
     Ok(GitOutput { stdout, stderr })
+}
+
+pub fn run_env(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> Result<GitOutput> {
+    run_stdin_env(cwd, args, None, envs)
 }
 
 /// Like `run`, but treat listed exit codes as success (e.g. `diff --no-index` → 1).

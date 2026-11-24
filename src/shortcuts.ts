@@ -1,5 +1,7 @@
 import { api } from "./api";
+import { t } from "./i18n";
 import { useApp } from "./store";
+import { askConfirm } from "./uiDialogs";
 
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
@@ -59,8 +61,16 @@ export function bindShortcuts(): () => void {
         : Object.keys(s.checkedPaths).filter((p) => s.checkedPaths[p]);
       if (!paths.length) return;
       e.preventDefault();
-      if (!confirm(paths.join("\n"))) return;
-      void s.run(() => api.discard(root, paths));
+      const locale = s.locale;
+      void (async () => {
+        const ok = await askConfirm({
+          title: t(locale, "rollback"),
+          message: paths.join("\n"),
+          danger: true,
+        });
+        if (!ok) return;
+        void s.run(() => api.discard(root, paths));
+      })();
       return;
     }
     // Ctrl+Alt+A → Stage / Add to VCS
@@ -78,8 +88,16 @@ export function bindShortcuts(): () => void {
       const f = s.status.find((x) => x.relPath === path);
       if (!f || (f.unstaged !== "untracked" && f.staged !== "untracked")) return;
       e.preventDefault();
-      if (!confirm(path)) return;
-      void s.run(() => api.deletePaths(root, [path]));
+      const locale = s.locale;
+      void (async () => {
+        const ok = await askConfirm({
+          title: t(locale, "delete"),
+          message: path,
+          danger: true,
+        });
+        if (!ok) return;
+        void s.run(() => api.deletePaths(root, [path]));
+      })();
     }
   };
 

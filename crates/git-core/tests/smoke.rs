@@ -18,16 +18,11 @@ fn opens_workspace_repo() {
     let _ = status.len();
     let info = repo.branch_info().expect("branch");
     assert!(info.head_commit.is_some() || info.head.is_some() || info.operation.is_some() || true);
-    let commits = repo
+    let page = repo
         .log(&LogQuery {
             limit: 5,
-            skip: 0,
-            author: None,
-            grep: None,
-            path: None,
-            branch: None,
-            since: None,
+            ..Default::default()
         })
         .expect("log");
-    assert!(!commits.is_empty() || commits.is_empty());
+    assert!(!page.commits.is_empty() || page.commits.is_empty());
 }
